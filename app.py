@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
+import pydeck as pdk # YENİ KÜTÜPHANE
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="VANGUARD System", layout="wide")
@@ -72,24 +73,15 @@ with col1:
 # --- 4. PROCESS INPUT AND MAKE PREDICTION ---
 if st.button("CLASSIFY TRACK", type="primary", use_container_width=True):
     # Prepare the input data to match the format the model was trained on
-    # a. One-Hot Encode the categorical features
     input_df_encoded = pd.get_dummies(input_df)
-    # b. Ensure all columns from training are present, filling missing ones with 0
     input_df_processed = input_df_encoded.reindex(columns=training_columns, fill_value=0)
-
-    # c. Scale the data using the SAME scaler from training
     input_df_scaled = scaler.transform(input_df_processed)
-
-    # d. Make the prediction
     prediction = model.predict(input_df_scaled)[0]
     prediction_proba = model.predict_proba(input_df_scaled)
 
     # --- 5. DISPLAY RESULTS ---
-    # Results are shown in the second column
     with col2:
         st.header("Classification Result")
-
-        # Display result with color and icon based on the prediction
         CLASSIFICATION_STYLE = {
             'HOSTILE': {"icon": '💣', "type": 'error'},
             'SUSPECT': {"icon": '❓', "type": 'warning'},
@@ -110,12 +102,47 @@ if st.button("CLASSIFY TRACK", type="primary", use_container_width=True):
         # Display map with the track's location
         st.subheader("Track Location")
         map_df = pd.DataFrame({'lat': [latitude], 'lon': [longitude]})
-        st.map(map_df, zoom=5)
+        # pydeck haritasını göster (YENİ KOD BLOĞU)
+        st.pydeck_chart(pdk.Deck(
+            map_style=None,
+            initial_view_state=pdk.ViewState(
+                latitude=latitude,
+                longitude=longitude,
+                zoom=6,
+                pitch=50,
+            ),
+            layers=[
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_df,
+                    get_position=["lon", "lat"],
+                    get_color="[200, 30, 0, 160]",
+                    get_radius=10000,
+                ),
+            ],
+        ))
 
 else:
-    # What to show before the button is pressed
     with col2:
         st.info("Awaiting input data for classification.")
         st.subheader("Track Location")
         map_df = pd.DataFrame({'lat': [latitude], 'lon': [longitude]})
-        st.map(map_df, zoom=5)
+        # Başlangıç haritasını da pydeck ile gösterelim
+        st.pydeck_chart(pdk.Deck(
+            map_style=None,
+            initial_view_state=pdk.ViewState(
+                latitude=latitude,
+                longitude=longitude,
+                zoom=6,
+                pitch=50,
+            ),
+            layers=[
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_df,
+                    get_position=["lon", "lat"],
+                    get_color="[200, 30, 0, 160]",
+                    get_radius=10000,
+                ),
+            ],
+        ))
