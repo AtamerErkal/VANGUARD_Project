@@ -1,0 +1,10 @@
+artifact_location: file:///C:/VANGUARD_Project/mlruns/936663222485871069/models/m-7af6a43495c9498aa0b9732700dec5fd/artifacts
+creation_timestamp: 1756500650158
+experiment_id: '936663222485871069'
+last_updated_timestamp: 1756500654040
+model_id: m-7af6a43495c9498aa0b9732700dec5fd
+model_type: null
+name: standard_scaler
+source_run_id: b5c58edcf99b4251bfde23c58c96716a
+status: 2
+status_message: null
