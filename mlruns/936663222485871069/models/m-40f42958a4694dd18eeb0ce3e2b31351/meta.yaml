@@ -1,0 +1,10 @@
+artifact_location: file:///C:/VANGUARD_Project/mlruns/936663222485871069/models/m-40f42958a4694dd18eeb0ce3e2b31351/artifacts
+creation_timestamp: 1756500640285
+experiment_id: '936663222485871069'
+last_updated_timestamp: 1756500650106
+model_id: m-40f42958a4694dd18eeb0ce3e2b31351
+model_type: null
+name: random_forest_model
+source_run_id: b5c58edcf99b4251bfde23c58c96716a
+status: 2
+status_message: null

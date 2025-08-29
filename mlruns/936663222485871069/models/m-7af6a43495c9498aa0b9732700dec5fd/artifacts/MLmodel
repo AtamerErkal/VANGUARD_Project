@@ -1,0 +1,14 @@
+artifact_path: file:///C:/VANGUARD_Project/mlruns/936663222485871069/models/m-7af6a43495c9498aa0b9732700dec5fd/artifacts
+flavors:
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.1
+mlflow_version: 3.3.2
+model_id: m-7af6a43495c9498aa0b9732700dec5fd
+model_size_bytes: 1068
+model_uuid: m-7af6a43495c9498aa0b9732700dec5fd
+prompts: null
+run_id: b5c58edcf99b4251bfde23c58c96716a
+utc_time_created: '2025-08-29 20:50:50.240562'
