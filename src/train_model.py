@@ -11,30 +11,30 @@ import os
 
 def run_training():
     """
-    This function loads data, preprocesses it, trains a model using GridSearchCV,
-    evaluates it, and logs everything with MLflow.
+    Trains a model on the new FUSED dataset, which includes data from
+    simulated Radar and EO/IR sensors.
     """
     
-    # --- MLFLOW SETUP ---
-    # Set an experiment name to group your runs
-    mlflow.set_experiment("VANGUARD Air Track Classification")
+    mlflow.set_experiment("VANGUARD - Sensor Fusion Model")
 
-    # Define paths relative to the project root
-    DATA_PATH = os.path.join("data", "vanguard_air_tracks.csv")
+    DATA_PATH = os.path.join("data", "vanguard_air_tracks_fused.csv")
     MODEL_DIR = "models"
     
-    # Start a new MLflow run
-    with mlflow.start_run(run_name="RandomForest_Optimized"):
-        print("MLflow run started...")
+    with mlflow.start_run(run_name="RandomForest_Fusion_Data"):
+        print("MLflow run started for sensor fusion model...")
         
         # --- DATA LOADING AND PREPROCESSING ---
         df = pd.read_csv(DATA_PATH)
         
+        # Define which columns are categorical for one-hot encoding
+        categorical_features = ['electronic_signature', 'flight_profile', 'weather', 'thermal_signature']
+        
         X = df.drop(['classification', 'latitude', 'longitude'], axis=1)
         y = df['classification']
-        X_encoded = pd.get_dummies(X, columns=['electronic_signature', 'flight_profile'])
         
-        # Save training columns for the app to use
+        # One-hot encode ALL categorical features, including the new ones
+        X_encoded = pd.get_dummies(X, columns=categorical_features)
+        
         joblib.dump(X_encoded.columns, os.path.join(MODEL_DIR, 'training_columns.joblib'))
         
         X_train, X_test, y_train, y_test = train_test_split(
@@ -45,17 +45,16 @@ def run_training():
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
 
-        # --- MODEL TRAINING with GridSearchCV ---
+        # --- MODEL TRAINING ---
+        # We can use a simpler parameter grid for faster iteration
         param_grid = {
-            'n_estimators': [100, 200],
-            'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5]
+            'n_estimators': [150],
+            'max_depth': [20],
+            'min_samples_split': [5]
         }
         
-        # Log parameters to MLflow
         mlflow.log_params(param_grid)
-        mlflow.log_param("random_state", 42)
-        mlflow.log_param("test_size", 0.2)
+        mlflow.log_param("data_source", "fused_sensors_v1")
         
         rf = RandomForestClassifier(random_state=42)
         grid_search = GridSearchCV(estimator=rf, param_grid=param_grid, cv=3, n_jobs=-1, verbose=1)
@@ -69,24 +68,17 @@ def run_training():
         accuracy = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average='weighted')
         
-        print(f"Accuracy: {accuracy:.4f}")
-        print(f"Weighted F1-Score: {f1:.4f}")
-        
-        # Log metrics to MLflow
         mlflow.log_metric("accuracy", accuracy)
         mlflow.log_metric("f1_score_weighted", f1)
         
         # --- LOG AND SAVE ASSETS ---
-        # Log the scaler and the model using MLflow
-        mlflow.sklearn.log_model(best_model, "random_forest_model")
+        mlflow.sklearn.log_model(best_model, "sensor_fusion_rf_model")
         mlflow.sklearn.log_model(scaler, "standard_scaler")
 
-        # Save the final assets to the models directory for the app
         joblib.dump(best_model, os.path.join(MODEL_DIR, 'vanguard_classifier.joblib'))
         joblib.dump(scaler, os.path.join(MODEL_DIR, 'vanguard_scaler.joblib'))
         
-        print("MLflow run finished. Model and scaler saved.")
+        print("MLflow run finished. Sensor fusion model saved.")
 
 if __name__ == '__main__':
-    # This block ensures the training only runs when the script is executed directly
     run_training()
