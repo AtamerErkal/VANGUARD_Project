@@ -430,7 +430,8 @@ This system is for educational and research purposes only. Not intended for actu
 ## 📞 Contact
 
 **Project Maintainer:** Atamer Erkal
-
+- Email_ atamererkal.eu@gmail.com
+- LinkedIN: [@AtamerErkal](https://www.linkedin.com/in/atamererkal/)
 - GitHub: [@AtamerErkal](https://github.com/AtamerErkal)
 - Project Link: [https://github.com/AtamerErkal/VANGUARD_Project](https://github.com/AtamerErkal/VANGUARD_Project)
 
