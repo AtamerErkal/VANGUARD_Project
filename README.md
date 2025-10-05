@@ -12,7 +12,6 @@ An advanced AI-powered air track classification and threat assessment platform u
 - [Operating Modes](#operating-modes)
 - [Technical Components](#technical-components)
 - [Model Information](#model-information)
-- [Screenshots](#screenshots)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
@@ -24,6 +23,8 @@ VANGUARD (Vigilant AI Network for Ground-based UAV and Aircraft Recognition in D
 ### Mission
 
 To provide military and civilian air traffic controllers with an intelligent, automated system for identifying and tracking aircraft, detecting anomalies, and assessing potential threats with high accuracy and minimal latency.
+
+### Streamlit Demo: https://vanguard-ai.streamlit.app/
 
 ## ✨ Key Features
 
@@ -334,7 +335,7 @@ The model processes the following features:
 
 ### Model Performance
 
-- **Accuracy**: 94.7% (on validation set)
+- **Accuracy**: 88.7% (on validation set)
 - **Inference Time**: <50ms per classification
 - **Model Type**: Ensemble classifier (Random Forest/Gradient Boosting)
 
