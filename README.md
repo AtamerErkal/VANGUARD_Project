@@ -1,21 +1,7 @@
 \# 🛡️ VANGUARD AI Defense System
 
 
-
-\[!\[License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-\[!\[Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-
-\[!\[Streamlit](https://img.shields.io/badge/Streamlit-1.28+-FF4B4B.svg)](https://streamlit.io)
-
-
-
 An advanced AI-powered air track classification and threat assessment platform utilizing machine learning for real-time defense monitoring and analysis.
-
-
-
-!\[VANGUARD System](https://img.shields.io/badge/Status-Operational-success)
-
 
 
 \## 📋 Table of Contents
