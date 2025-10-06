@@ -413,6 +413,20 @@ Contributions are welcome! Please follow these steps:
 - Update documentation
 - Ensure all tests pass before submitting
 
+## 🤖 Development Notes
+
+This project was developed with assistance from AI tools (Claude/ChatGPT) for:
+- Code structure and architecture design
+- Implementation of specific features
+- Documentation and README creation
+
+**My contributions include:**
+- Project concept and requirements definition
+- Model training and hyperparameter tuning
+- Integration and deployment decisions
+- Testing, debugging, and performance optimization
+- Medical research and domain knowledge integration
+  
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
