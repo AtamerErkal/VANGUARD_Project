@@ -1,0 +1,14 @@
+artifact_uri: file:///C:/VANGUARD_Project/mlruns/936663222485871069/b5c58edcf99b4251bfde23c58c96716a/artifacts
+end_time: 1756500654195
+entry_point_name: ''
+experiment_id: '936663222485871069'
+lifecycle_stage: active
+run_id: b5c58edcf99b4251bfde23c58c96716a
+run_name: RandomForest_Optimized
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1756500589858
+status: 3
+tags: []
+user_id: Blue
