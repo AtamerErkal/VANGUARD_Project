@@ -450,7 +450,7 @@ def main():
 
                     weight_df = pd.DataFrame(list(sensor_weights.items()), columns=['Sensor', 'Weight'])
                     fig_weights = px.pie(weight_df, values='Weight', names='Sensor', hole=0.4,
-                                        color_discrete_sequence=px.colors.sequential.Ice)
+                                        color_discrete_sequence=px.colors.sequential.Blues)
                     fig_weights.update_layout(height=250, margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
                     st.plotly_chart(fig_weights, use_container_width=True)
 
