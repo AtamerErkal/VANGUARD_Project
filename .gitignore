@@ -1,0 +1,9 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.streamlit/
+data/processed/
+# data/ içindeki büyük CSVleri de hariç tutmak iyi olabilir
+data/*.csv
