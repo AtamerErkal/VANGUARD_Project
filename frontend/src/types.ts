@@ -52,6 +52,8 @@ export interface Track {
   hist_lats:            number[]
   hist_lons:            number[]
   hist_alts:            number[]
+  hist_speeds:          number[]
+  hist_headings:        number[]
   hist_timestamps:      string[]
 }
 

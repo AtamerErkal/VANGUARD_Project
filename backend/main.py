@@ -281,6 +281,24 @@ def _build_tracks():
         halts = [max(200, alt + (j - _N_HIST) * np.random.uniform(80, 220))
                  for j in range(_N_HIST)] + [alt]
 
+        # Speed history — varies more for aggressive profiles
+        sp_var = {"AGGRESSIVE_MANEUVERS": 55, "LOW_ALTITUDE_FLYING": 35, "CLIMBING": 20}.get(fp, 12)
+        hspds = []
+        s = spd + np.random.uniform(-sp_var * 2, sp_var * 2)
+        for j in range(_N_HIST):
+            s += np.random.normal(0, sp_var * 0.6)
+            hspds.append(int(np.clip(s, 100, 999)))
+        hspds.append(int(spd))
+
+        # Heading history — aggressive profiles make bigger turns per step
+        hdg_var = {"AGGRESSIVE_MANEUVERS": 14, "LOW_ALTITUDE_FLYING": 9, "CLIMBING": 6}.get(fp, 3)
+        hhdgs = []
+        h = (hdg + np.random.uniform(-hdg_var * _N_HIST, hdg_var * _N_HIST)) % 360
+        for j in range(_N_HIST):
+            h = (h + np.random.normal(0, hdg_var)) % 360
+            hhdgs.append(round(h, 1))
+        hhdgs.append(round(hdg, 1))
+
         # Timestamps: one per history point, _STEP_MINS apart, ending at now
         tstamps = [
             (now - timedelta(minutes=(_N_HIST - j) * _STEP_MINS)).strftime("%H:%M UTC")
@@ -318,9 +336,11 @@ def _build_tracks():
             "anomalies":      detect_anomalies(inp),
             "xai":            xai,
             "weather_impact": weather_impact,
-            "hist_lats":      hlats,
-            "hist_lons":      hlons,
-            "hist_alts":      halts,
+            "hist_lats":       hlats,
+            "hist_lons":       hlons,
+            "hist_alts":       halts,
+            "hist_speeds":     hspds,
+            "hist_headings":   hhdgs,
             "hist_timestamps": tstamps,
         })
     return tracks
