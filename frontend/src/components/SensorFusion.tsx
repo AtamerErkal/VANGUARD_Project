@@ -27,7 +27,7 @@ export default function SensorFusion({ track }: Props) {
         Sensor Fusion
       </p>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
         {SENSOR_ORDER.map(key => {
           const vd    = sensor_votes[key]
           if (!vd) return null

@@ -16,6 +16,13 @@ html, body, #root {
 /* MapLibre reset */
 .maplibregl-canvas { outline: none; }
 .maplibregl-ctrl-attrib { font-size: 10px !important; }
+.maplibregl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.maplibregl-popup-tip { display: none !important; }
 
 /* Sensor card stagger */
 .sensor-card { opacity: 0; }
