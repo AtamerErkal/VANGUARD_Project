@@ -74,12 +74,12 @@ export default function App() {
       <Header pendingCount={pendingCount} approvedCount={approvedCount} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Map */}
-        <div className="flex-1 p-3 min-w-0">
+        {/* Map — 60% */}
+        <div className="p-3" style={{ width: '60%', minWidth: 0 }}>
           <TacticalMap tracks={tracks} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
 
-        {/* Side panel */}
+        {/* Side panel — 40% */}
         {selected && (() => {
           const approval  = approvals[selected.track_id]
           const dispCls   = approval?.action === 'override' ? (approval.override_class ?? selected.ai_class) : selected.ai_class
@@ -87,8 +87,8 @@ export default function App() {
 
           return (
             <div
-              className="w-96 flex flex-col overflow-hidden"
-              style={{ borderLeft: '1px solid rgba(56,189,248,0.1)', background: 'rgba(6,10,16,0.92)' }}
+              className="flex flex-col overflow-hidden"
+              style={{ width: '40%', borderLeft: '1px solid rgba(56,189,248,0.1)', background: 'rgba(6,10,16,0.92)' }}
             >
               {/* Classification badge */}
               <div className="px-3 pt-3 pb-2 flex-shrink-0">
@@ -114,7 +114,7 @@ export default function App() {
                         {(selected.ai_conf * 100).toFixed(1)}% confidence &nbsp;·&nbsp; {selected.track_id}
                       </p>
                     </div>
-                    <div className="text-right text-xs space-y-0.5" style={{ color: '#475569', lineHeight: 1.9 }}>
+                    <div className="text-right text-xs space-y-0.5" style={{ color: '#94a3b8', lineHeight: 1.9 }}>
                       <div>{selected.electronic_signature}</div>
                       <div>{selected.flight_profile}</div>
                       <div>{selected.altitude_ft.toLocaleString()} ft</div>

@@ -67,15 +67,15 @@ export default function XAIPanel({ xai, aiClass }: Props) {
               <div className="flex items-center justify-between mb-0.5">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs w-2" style={{ color: barColor }}>{DIR_ICON[item.direction]}</span>
-                  <span className="text-xs truncate max-w-[160px]" style={{ color: '#94a3b8' }}>
+                  <span className="text-xs truncate max-w-[160px]" style={{ color: '#cbd5e1' }}>
                     {item.label}
                   </span>
-                  <span className="text-xs px-1 rounded" style={{ background: 'rgba(255,255,255,0.04)', color: '#475569', fontSize: 9 }}>
+                  <span className="text-xs px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', fontSize: 9 }}>
                     {item.group}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs" style={{ color: '#475569', fontSize: 9 }}>{item.value}</span>
+                  <span className="text-xs" style={{ color: '#94a3b8', fontSize: 10 }}>{item.value}</span>
                   <span className="text-xs font-bold w-8 text-right" style={{ color: barColor }}>
                     {(item.importance * 100).toFixed(0)}%
                   </span>
@@ -95,13 +95,13 @@ export default function XAIPanel({ xai, aiClass }: Props) {
       {/* Human-readable explanation */}
       <div className="rounded-xl px-3 py-2.5 text-xs space-y-1"
            style={{ background: 'rgba(12,18,30,0.7)', border: '1px solid rgba(56,189,248,0.08)' }}>
-        <p style={{ color: '#64748b', fontStyle: 'italic' }}>
+        <p style={{ color: '#94a3b8', fontStyle: 'italic' }}>
           Top factors driving <span style={{ color: style.color }}>{aiClass}</span>:
         </p>
         {supporting.slice(0, 3).map(item => (
           <p key={item.feature} style={{ color: '#475569' }}>
             <span style={{ color: '#4ade80' }}>↑</span>{' '}
-            <span style={{ color: '#94a3b8' }}>{item.label}</span>
+            <span style={{ color: '#cbd5e1' }}>{item.label}</span>
             {' '}({item.value}) — {(item.importance * 100).toFixed(0)}% weight
           </p>
         ))}

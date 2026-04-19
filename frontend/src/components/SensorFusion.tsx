@@ -54,10 +54,10 @@ export default function SensorFusion({ track }: Props) {
                   <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: style.bg, color: style.color, fontFamily: 'Orbitron, monospace', letterSpacing: 1, fontSize: 10 }}>
                     {vd.vote}
                   </span>
-                  <span className="text-xs" style={{ color: '#475569' }}>w={w.toFixed(2)}</span>
+                  <span className="text-xs" style={{ color: '#64748b' }}>w={w.toFixed(2)}</span>
                 </div>
               </div>
-              <p className="text-xs mb-2" style={{ color: '#64748b' }}>{vd.reading}</p>
+              <p className="text-xs mb-2" style={{ color: '#94a3b8' }}>{vd.reading}</p>
               <ConfBar value={vd.conf} color={style.color} />
             </div>
           )
@@ -73,7 +73,7 @@ export default function SensorFusion({ track }: Props) {
           const s = CLASS_STYLES[cls] ?? CLASS_STYLES['NEUTRAL']
           return (
             <div key={cls} className="flex items-center gap-2">
-              <span className="w-28 text-xs truncate" style={{ color: '#64748b' }}>{cls}</span>
+              <span className="w-28 text-xs truncate" style={{ color: '#94a3b8' }}>{cls}</span>
               <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
                 <div
                   className="h-full rounded-full transition-all duration-700"
