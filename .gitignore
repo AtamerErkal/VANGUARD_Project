@@ -1,42 +1,53 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
+*.pyo
 *.so
-
-# Distribution / packaging
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# Environments
+# Virtual environments
 .env
 .venv
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
-# Project specific
-data/processed/
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Generated data (run `python retrain.py` to regenerate)
 data/*.csv
+data/processed/
+data/raw/
+data/cache/
+
+# Old / legacy model artifacts (only keep current PyTorch ones)
+models/vanguard_classifier.joblib
+models/vanguard_scaler.joblib
+models/training_columns.joblib
+
+# MLflow runs
+mlruns/
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Claude Code internal
+.claude/
+
+# Streamlit
 .streamlit/
+
+# Jupyter
 .ipynb_checkpoints/
+*.ipynb

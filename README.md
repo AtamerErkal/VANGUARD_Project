@@ -1,470 +1,195 @@
-# 🛡️ VANGUARD AI Defense System
+# 🛡️ VANGUARD AI — Tactical Aircraft Classification System
 
-An advanced AI-powered air track classification and threat assessment platform utilizing machine learning for real-time defense monitoring and analysis.
+A real-time, AI-powered air picture system that classifies airborne contacts using sensor fusion and a PyTorch neural network. Built as a full-stack demo of human-machine teaming for military threat assessment.
 
-## 📋 Table of Contents
+![VANGUARD Tactical Interface](images/VANGUARD_1.png)
 
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [System Architecture](#system-architecture)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Operating Modes](#operating-modes)
-- [Technical Components](#technical-components)
-- [Model Information](#model-information)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
+---
 
-## 🎯 Overview
+## Overview
 
-VANGUARD (Vigilant AI Network for Ground-based UAV and Aircraft Recognition in Defense) is a comprehensive defense system designed to classify, track, and assess aerial threats in real-time. The system leverages machine learning algorithms to analyze radar signatures, flight patterns, and sensor data to provide accurate threat assessments.
+VANGUARD AI simulates a multi-sensor fusion environment where contacts are classified into **6 NATO-standard threat categories**:
 
-### Mission
+| Symbol | Class | Description |
+|--------|-------|-------------|
+| 🚨 H | **HOSTILE** | Confirmed hostile — aggressive maneuvers, jamming |
+| ⚠️ S | **SUSPECT** | Suspicious behavior, no IFF confirmation |
+| ❓ U | **UNKNOWN** | Unidentified — default state for new contacts |
+| 🏳️ N | **NEUTRAL** | Neutral-state civil or commercial traffic |
+| 🤝 A | **ASSUMED FRIEND** | Allied on civil transponder (IFF Mode-3C) |
+| 🛡️ F | **FRIEND** | Confirmed friendly (IFF Mode-5) |
 
-To provide military and civilian air traffic controllers with an intelligent, automated system for identifying and tracking aircraft, detecting anomalies, and assessing potential threats with high accuracy and minimal latency.
+The AI classifies each contact by combining kinematic, electronic, radar, thermal and environmental sensor data — then a human expert can approve or override the decision.
 
-### Streamlit Demo: https://vanguard-ai.streamlit.app/
+---
 
-## ✨ Key Features
-
-### 🎯 Core Capabilities
-
-- **AI-Powered Classification**: Machine learning model for aircraft identification (HOSTILE, FRIEND, CIVILIAN, SUSPECT, NEUTRAL, ASSUMED FRIEND)
-- **Real-Time Threat Assessment**: Dynamic threat scoring system with multi-factor analysis
-- **Multi-Track Monitoring**: Simultaneous tracking of multiple aircraft with conflict detection
-- **Anomaly Detection**: Automated detection of unusual flight patterns and behaviors
-- **3D Flight Path Visualization**: Interactive track history with Plotly 3D rendering
-- **Conflict Detection**: Real-time separation monitoring and collision warning
-
-### 📊 Advanced Analytics
-
-- **Threat Matrix Dashboard**: Comprehensive threat level visualization
-- **Historical Track Playback**: Realistic flight path generation and analysis
-- **Sensor Data Integration**: Multi-source data fusion (radar, thermal, electronic signatures)
-- **System Metrics Monitoring**: Performance tracking and uptime statistics
-
-### 🔬 Intelligence Features
-
-- Speed anomaly detection with classification-specific thresholds
-- Altitude pattern analysis for terrain-following detection
-- Electronic signature profiling (IFF modes, jamming detection)
-- Weather-adaptive threat assessment
-- Proximity-based risk evaluation
-
-## 🏗️ System Architecture
+## Architecture
 
 ```
-VANGUARD System
-│
-├── Frontend (Streamlit)
-│   ├── Single Track Analysis
-│   ├── Multi-Track Monitoring
-│   ├── Track History Visualization
-│   └── Advanced Analytics Dashboard
-│
-├── AI/ML Pipeline
-│   ├── Pre-trained Classification Model
-│   ├── Feature Scaler
-│   └── Training Column Schema
-│
-├── Core Modules
-│   ├── TrackHistoryGenerator
-│   ├── MultiAircraftTracker
-│   ├── ConflictDetector
-│   ├── AnomalyDetector
-│   └── ThreatAssessment
-│
-└── Data Processing
-    ├── Sensor Data Integration
-    ├── Real-time Track Management
-    └── Historical Analysis
+┌─────────────────────────────────────────────────────────┐
+│                    VANGUARD TACTICAL UI                 │
+│  React 18 + TypeScript + MapLibre GL + Plotly           │
+└────────────────────┬────────────────────────────────────┘
+                     │ REST API
+┌────────────────────▼────────────────────────────────────┐
+│                  FastAPI Backend                        │
+│  • PyTorch MLP classifier  (20 features → 6 classes)   │
+│  • Dempster-Shafer sensor fusion (Radar/ESM/IRST/IFF)   │
+│  • Perturbation-based XAI  (feature importance)        │
+│  • What-if scenario engine                             │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Installation
+### Neural Network
+
+| Layer | Size | Activation |
+|-------|------|------------|
+| Input | 20 features | — |
+| Dense 1 | 128 | BatchNorm + ReLU + Dropout 0.3 |
+| Dense 2 | 64 | BatchNorm + ReLU + Dropout 0.2 |
+| Dense 3 | 32 | BatchNorm + ReLU + Dropout 0.1 |
+| Output | 6 classes | Softmax |
+
+**Test set performance:** Accuracy 89.3% · F1 Macro 88.0% · F1 Weighted 89.4%
+
+The model is trained on behavioural/sensor features only — no geographic coordinates — so it generalises across theaters.
+
+### Sensor Fusion
+
+Each sensor votes independently; votes are weighted and summed:
+
+| Sensor | Weight | Signal |
+|--------|--------|--------|
+| Radar | 0.40 | RCS size → class hints |
+| ESM | 0.35 | Electronic / jamming signature |
+| IRST | 0.15 | Thermal signature (degrades in non-clear weather) |
+| IFF | 0.10 | Transponder mode |
+
+---
+
+## Features
+
+- **Live tactical map** — animated contacts with heading indicators, glassmorphism popups
+- **AI classification badge** — class, confidence %, sensor fusion gap
+- **Maneuver Envelope (3D)** — altitude × speed × time with turn-rate color coding
+- **Explainable AI panel** — per-feature perturbation importance for each contact
+- **What-if panel** — change any sensor parameter and see how the classification changes
+- **Expert Approval** — approve or override AI decisions with audit trail
+- **Model Online modal** — real F1/precision/recall metrics, 6×6 confusion matrix heatmap
+- **Theater Threat Level** — CRITICAL / HIGH / ELEVATED / GUARDED / LOW aggregated from all contacts
+- **Collapsible side panel** — full-screen map mode
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- pip package manager
-- 4GB+ RAM recommended
+- Python 3.10+
+- Node.js 18+
 
-### Step 1: Clone the Repository
+### 1 — Clone & install
 
 ```bash
 git clone https://github.com/AtamerErkal/VANGUARD_Project.git
 cd VANGUARD_Project
 ```
 
-### Step 2: Create Virtual Environment (Recommended)
+**Backend:**
+```bash
+pip install -r backend/requirements.txt
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+### 2 — Train the model
 
 ```bash
-# On Windows
-python -m venv venv
-venv\Scripts\activate
-
-# On macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
+python retrain.py
 ```
 
-### Step 3: Install Dependencies
+Generates training data and saves model artifacts to `models/`.  
+Expected output: **~89% accuracy**, F1 Macro ~88%.
+
+### 3 — Start the backend
 
 ```bash
-pip install -r requirements.txt
+python run_server.py
 ```
 
-### Required Dependencies
+API will be available at `http://localhost:8000`.
 
-```txt
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-joblib>=1.3.0
-plotly>=5.17.0
-scikit-learn>=1.3.0
-```
-
-### Step 4: Model Files
-
-Ensure the following model files are present in the `models/` directory:
-
-- `vanguard_classifier.joblib` - Main classification model
-- `vanguard_scaler.joblib` - Feature scaler
-- `training_columns.joblib` - Column schema
-
-## 💻 Usage
-
-### Running the Application
+### 4 — Start the frontend
 
 ```bash
-streamlit run app.py
+cd frontend
+npm run dev
 ```
 
-The application will launch in your default web browser at `http://localhost:8501`
-
-### Quick Start Guide
-
-1. **Single Track Analysis Mode**
-   - Enter aircraft position (latitude/longitude)
-   - Set radar parameters (altitude, speed, RCS)
-   - Configure sensor data (weather, thermal signature, electronic profile)
-   - Click "ANALYZE TRACK" to classify
-
-2. **Multi-Track Monitoring**
-   - View all active tracks in real-time
-   - Monitor conflict detection alerts
-   - Assess threat levels across all aircraft
-
-3. **Track History**
-   - Generate realistic flight paths
-   - Visualize 3D trajectories
-   - Analyze altitude and speed profiles
-
-4. **Advanced Analytics**
-   - Review anomaly detection results
-   - Examine threat matrix
-   - Monitor system metrics
-
-## 🎮 Operating Modes
-
-### 🎯 Single Track Analysis
-
-Analyze individual aircraft tracks with detailed sensor data input and AI classification.
-
-**Input Parameters:**
-
-- Geographic Position (Lat/Lon)
-- Altitude (0-65,000 ft)
-- Speed (0-2,000 knots)
-- Radar Cross Section (0.1-100 m²)
-- Weather Conditions
-- Thermal Signature
-- Electronic Signature (IFF modes)
-- Flight Profile
-
-**Output:**
-
-- Classification result
-- Map visualization
-- Anomaly warnings
-- Track ID assignment
-
-### 🌐 Multi-Track Monitoring
-
-Real-time dashboard for tracking multiple aircraft simultaneously.
-
-**Features:**
-
-- Active track count
-- Hostile aircraft counter
-- Average altitude/speed metrics
-- Conflict detection system
-- Threat assessment matrix
-- Interactive map with all tracks
-
-**Conflict Detection:**
-
-- Horizontal separation minimum: 5 NM
-- Vertical separation minimum: 1,000 ft
-- Severity levels: CRITICAL (<2 NM) / WARNING (2-5 NM)
-
-### 📊 Track History
-
-Generate and visualize realistic flight paths based on aircraft classification.
-
-**Capabilities:**
-
-- 30-minute track generation
-- 30-second interval updates
-- Classification-specific behavior patterns
-- 3D flight path rendering
-- Altitude/speed profile charts
-
-### 🔍 Advanced Analytics
-
-Comprehensive analysis dashboard for system-wide intelligence.
-
-**Analytics Modules:**
-
-1. **Anomaly Detection**
-   - Speed deviation analysis
-   - Altitude anomaly detection
-   - Behavior pattern recognition
-
-2. **Threat Matrix**
-   - Multi-factor threat scoring
-   - Priority-sorted track list
-   - Visual threat level indicators
-
-3. **System Metrics**
-   - Total track count
-   - System uptime monitoring
-   - Model accuracy statistics
-
-## 🔧 Technical Components
-
-### TrackHistoryGenerator
-
-Generates realistic flight paths based on aircraft classification.
-
-```python
-generator = TrackHistoryGenerator(start_lat, start_lon, classification)
-track_data = generator.generate_realistic_track(duration_minutes=30, interval_seconds=30)
-```
-
-### MultiAircraftTracker
-
-Manages multiple aircraft tracks with persistent state.
-
-**Methods:**
-
-- `add_track()` - Register new aircraft
-- `get_all_tracks()` - Retrieve active tracks
-- Track history maintenance
-
-### ConflictDetector
-
-Monitors separation standards and identifies potential conflicts.
-
-**Parameters:**
-
-- Horizontal separation minimum: 5.0 NM
-- Vertical separation minimum: 1,000 ft
-
-**Output:**
-
-- Conflict pairs
-- Separation distances
-- Severity classification
-
-### AnomalyDetector
-
-Identifies unusual behavior patterns.
-
-**Detection Types:**
-
-- Speed anomalies (unusually slow/fast)
-- Altitude anomalies (low altitude, extreme altitude)
-- Terrain-following behavior
-- Classification-specific threshold violations
-
-### ThreatAssessment
-
-Multi-factor threat scoring system.
-
-**Threat Score Weights:**
-
-- Classification: 35%
-- Speed: 15%
-- Altitude: 15%
-- Proximity: 20%
-- Anomalies: 15%
-
-**Threat Levels:**
-
-- 🔴 CRITICAL (75-100)
-- 🟠 HIGH (60-74)
-- 🟡 MEDIUM (40-59)
-- 🟢 LOW (0-39)
-
-## 🤖 Model Information
-
-### Classification Categories
-
-| Classification | Description | Typical Use Case |
-|---------------|-------------|------------------|
-| **HOSTILE** | Confirmed enemy aircraft | Combat situations |
-| **SUSPECT** | Unidentified with hostile indicators | Investigation required |
-| **NEUTRAL** | Non-aligned aircraft | International airspace |
-| **FRIEND** | Allied military aircraft | Friendly operations |
-| **ASSUMED FRIEND** | Likely friendly, unconfirmed | Peacetime operations |
-| **CIVILIAN** | Commercial/private aircraft | Air traffic control |
-
-### Input Features
-
-The model processes the following features:
-
-- Altitude (feet)
-- Speed (knots)
-- Radar Cross Section (m²)
-- Electronic Signature (IFF response)
-- Flight Profile (maneuver patterns)
-- Weather Conditions
-- Thermal Signature
-
-### Model Performance
-
-- **Accuracy**: 88.7% (on validation set)
-- **Inference Time**: <50ms per classification
-- **Model Type**: Ensemble classifier (Random Forest/Gradient Boosting)
-
-## 📸 Screenshots
-
-### Main Dashboard
-
-*Single Track Analysis interface with real-time classification*
-
-### Multi-Track Monitoring
-
-*Live tracking of multiple aircraft with conflict detection*
-
-### 3D Track History
-
-*Interactive flight path visualization*
-
-### Threat Matrix
-
-*Comprehensive threat assessment dashboard*
-
-## 🛠️ Configuration
-
-### System Settings
-
-The application supports the following configuration options:
-
-```python
-# Conflict Detection Thresholds
-HORIZONTAL_SEPARATION_MIN = 5.0  # Nautical Miles
-VERTICAL_SEPARATION_MIN = 1000   # Feet
-
-# Threat Assessment Weights
-THREAT_WEIGHTS = {
-    'classification': 0.35,
-    'speed': 0.15,
-    'altitude': 0.15,
-    'proximity': 0.20,
-    'anomalies': 0.15
-}
-```
-
-## 📊 Data Format
-
-### Track Data Structure
-
-```python
-{
-    'track_id': 'TRACK_0001',
-    'latitude': 51.5074,
-    'longitude': -0.1278,
-    'altitude': 35000,
-    'speed': 450,
-    'classification': 'CIVILIAN',
-    'first_seen': datetime,
-    'last_updated': datetime,
-    'history': [...]
-}
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow PEP 8 style guide
-- Add unit tests for new features
-- Update documentation
-- Ensure all tests pass before submitting
-
-## 🤖 Development Notes
-
-This project was developed with assistance from AI tools (Claude/ChatGPT) for:
-- Code structure and architecture design
-- Implementation of specific features
-- Documentation and README creation
-
-**My contributions include:**
-- Project concept and requirements definition
-- Model training and hyperparameter tuning
-- Integration and deployment decisions
-- Testing, debugging, and performance optimization
-- Medical research and domain knowledge integration
-  
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔒 Security & Disclaimer
-
-**IMPORTANT**: This is a demonstration/educational project. For production defense systems:
-
-- Implement proper authentication and authorization
-- Use encrypted communications
-- Follow military-grade security protocols
-- Comply with relevant defense regulations
-
-This system is for educational and research purposes only. Not intended for actual military deployment without proper certification and security hardening.
-
-## 📞 Contact
-
-**Project Maintainer:** Atamer Erkal
-- Email_ atamererkal.eu@gmail.com
-- LinkedIN: [@AtamerErkal](https://www.linkedin.com/in/atamererkal/)
-- GitHub: [@AtamerErkal](https://github.com/AtamerErkal)
-- Project Link: [https://github.com/AtamerErkal/VANGUARD_Project](https://github.com/AtamerErkal/VANGUARD_Project)
-
-## 🙏 Acknowledgments
-
-- Streamlit for the web framework
-- Plotly for interactive visualizations
-- scikit-learn for machine learning capabilities
-- The open-source community
-
-## 🗓️ Version History
-
-- **v3.0** (Current) - Production build with advanced analytics
-- **v2.0** - Multi-track monitoring and conflict detection
-- **v1.0** - Initial release with single track classification
+Open `http://localhost:5173` in your browser.
 
 ---
 
-**🛡️ VANGUARD AI System** | Advanced Air Defense Intelligence Platform | © 2025
+## Project Structure
 
-*Built with ❤️ for enhanced aviation security*
+```
+vanguard-ai/
+├── backend/
+│   ├── main.py              # FastAPI app — inference, fusion, XAI, what-if
+│   └── requirements.txt     # Python dependencies
+├── frontend/
+│   └── src/
+│       ├── App.tsx
+│       ├── api.ts
+│       ├── types.ts
+│       └── components/
+│           ├── Header.tsx         # Theater threat level, model/sensor modals
+│           ├── TacticalMap.tsx    # MapLibre GL animated contact map
+│           ├── SensorFusion.tsx   # Weighted sensor vote breakdown
+│           ├── Trail3D.tsx        # Maneuver envelope (altitude×speed×time)
+│           ├── XAIPanel.tsx       # Perturbation-based feature importance
+│           ├── WhatIfPanel.tsx    # Interactive scenario engine
+│           ├── ExpertApproval.tsx # Human-in-the-loop approval
+│           └── AnomalyAlerts.tsx
+├── models/                  # Saved PyTorch model + scalers (git-tracked)
+├── data/                    # Generated CSV (git-ignored, rebuilt by retrain.py)
+├── retrain.py               # Full training pipeline (data gen → train → eval)
+├── run_server.py            # Backend launcher
+└── images/
+```
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Health check |
+| GET | `/api/tracks` | All contacts with AI classification + fusion |
+| POST | `/api/classify` | Classify a single contact |
+| POST | `/api/whatif` | What-if scenario (modify features) |
+| GET | `/api/model-stats` | Full metrics, per-class F1, confusion matrix |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 · TypeScript · Vite · Tailwind CSS |
+| Map | MapLibre GL JS |
+| 3D Charts | Plotly.js |
+| Backend | FastAPI · Uvicorn |
+| ML | PyTorch · scikit-learn |
+| Data | NumPy · Pandas |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)

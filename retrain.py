@@ -1,7 +1,9 @@
 """
-VANGUARD AI — Retrain script  v2 (realistic overlap)
-NATO standard 6-class classification (F/H/S/U/N/A)
-Target accuracy: ~85-90% — classes have realistic real-world overlap/deception
+VANGUARD AI — Retrain  v3 (realistic imbalance + overlap)
+NATO standard 6-class: F / H / S / U / N / A
+- Class distribution mirrors real air traffic (HOSTILE rare, UNKNOWN dominant)
+- Deception/overlap scenarios per class
+- Class-weighted loss emphasises rare but critical HOSTILE/SUSPECT
 Run: python retrain.py
 """
 
@@ -21,206 +23,211 @@ SEED = 42
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-# ── Realistic overlap design ──────────────────────────────────────────────────
-#
-#  Confusion expected (by design):
-#    HOSTILE  <-> SUSPECT    (10-15%) — hostile spoofs civilian profile
-#    SUSPECT  <-> UNKNOWN    (12-18%) — ambiguous non-cooperator
-#    UNKNOWN  <-> NEUTRAL    (8-12%)  — unidentified commercial-sized contact
-#    FRIEND   <-> ASS.FRIEND (5-8%)   — radio silence or IFF degradation
-#    ASS.FRIEND <-> NEUTRAL  (5-8%)   — IFF-3C on both
-#
-#  Deception scenarios embedded in HOSTILE (~25% of hostile samples):
-#    - Spoof civilian transponder (IFF_MODE_3C)
-#    - Blend-in altitude (commercial cruise)
-#    - Reduced speed / stable cruise approach
+# ── Realistic class counts ────────────────────────────────────────────────────
+# Real air-picture: most contacts start UNKNOWN, few are ever truly HOSTILE
+CLASS_COUNTS = {
+    'UNKNOWN':        2800,   # 33% — every contact starts here
+    'NEUTRAL':        2400,   # 29% — commercial / neutral-state traffic
+    'ASSUMED FRIEND': 1200,   # 14% — allied military on civil transponder
+    'FRIEND':          700,   #  8% — confirmed friendly (IFF Mode-5)
+    'SUSPECT':         500,   #  6% — suspicious behaviour, no confirmation
+    'HOSTILE':         800,   # 10% — slightly boosted so model sees enough examples
+}
+# Total: ~8400  HOSTILE+SUSPECT = 16%  UNKNOWN+NEUTRAL = 62%
 
-def generate_dataset(n_per_class: int = 1400) -> pd.DataFrame:
-    rng = np.random.default_rng(SEED)
+
+# ── Data generation ───────────────────────────────────────────────────────────
+
+def _sample(rng, lo, hi, noise=0.0):
+    v = rng.uniform(lo, hi)
+    return v + rng.normal(0, noise) if noise else v
+
+def _thermal(base, weather, rng, fail_p=0.75):
+    if weather != 'Clear' and rng.random() < fail_p:
+        return 'Not_Detected'
+    return base
+
+W, WP = ['Clear', 'Cloudy', 'Rainy'], [0.65, 0.25, 0.10]
+
+
+def _rows_FRIEND(rng, n):
     rows = []
-
-    def n(val, std):  return val + rng.normal(0, std)
-    def weather_thermal(base, w, fail_p=0.75):
-        if w != 'Clear' and rng.random() < fail_p:
-            return 'Not_Detected'
-        return base
-
-    W, WP = ['Clear', 'Cloudy', 'Rainy'], [0.65, 0.25, 0.10]
-
-    for _ in range(n_per_class):
-
-        # ── F  FRIEND ─────────────────────────────────────────────────────
-        # 94% canonical: IFF Mode-5 + military profile
-        #  6% edge: radio silence (covert op) → looks like SUSPECT/UNKNOWN
+    for _ in range(n):
         w = rng.choice(W, p=WP)
-        edge = rng.random() < 0.10
+        radio_silence = rng.random() < 0.10   # covert op → looks like SUSPECT
         rows.append({
             'classification':       'FRIEND',
-            'altitude_ft':          n(rng.uniform(8000, 45000), 1200),
-            'speed_kts':            n(rng.uniform(350, 780), 35),
-            'rcs_m2':               rng.uniform(3.0, 22.0),
-            'heading':              rng.uniform(0, 360),
-            'latitude':             rng.uniform(46, 56),
-            'longitude':            rng.uniform(5, 22),
-            'electronic_signature': 'NO_IFF_RESPONSE' if edge else 'IFF_MODE_5',
+            'altitude_ft':          _sample(rng, 8000,  45000, 1200),
+            'speed_kts':            _sample(rng, 350,   780,   35),
+            'rcs_m2':               _sample(rng, 3.0,   22.0),
+            'heading':              _sample(rng, 0,     360),
+            'latitude':             _sample(rng, 46,    56),
+            'longitude':            _sample(rng, 5,     22),
+            'electronic_signature': 'NO_IFF_RESPONSE' if radio_silence else 'IFF_MODE_5',
             'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.65, 0.35]),
             'weather':              w,
-            'thermal_signature':    weather_thermal(
-                rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w),
+            'thermal_signature':    _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
         })
+    return rows
 
-        # ── H  HOSTILE ────────────────────────────────────────────────────
-        # 65% canonical: stealth RCS + jamming/no-IFF + aggressive
-        # 22% spoofing: IFF_MODE_3C + commercial altitude (blends with NEUTRAL/ASS.FRIEND)
-        # 13% covert approach: slow + stable (blends with SUSPECT)
-        w = rng.choice(W, p=WP)
-        scenario = rng.choice(['canonical', 'spoof_civil', 'covert'], p=[0.65, 0.22, 0.13])
-        if scenario == 'spoof_civil':
+
+def _rows_HOSTILE(rng, n):
+    rows = []
+    for _ in range(n):
+        w   = rng.choice(W, p=WP)
+        scn = rng.choice(['canonical', 'spoof_civil', 'covert'], p=[0.65, 0.22, 0.13])
+
+        if scn == 'spoof_civil':        # mimics NEUTRAL/ASSUMED FRIEND
             rows.append({
                 'classification':       'HOSTILE',
-                'altitude_ft':          n(rng.uniform(28000, 40000), 800),  # commercial altitude
-                'speed_kts':            n(rng.uniform(400, 560), 25),       # commercial speed
-                'rcs_m2':               rng.uniform(0.5, 4.0),              # still small-ish
-                'heading':              rng.uniform(0, 360),
-                'latitude':             rng.uniform(43, 52),
-                'longitude':            rng.uniform(20, 40),
-                'electronic_signature': 'IFF_MODE_3C',                      # spoofed transponder
+                'altitude_ft':          _sample(rng, 28000, 40000, 800),
+                'speed_kts':            _sample(rng, 400,   560,   25),
+                'rcs_m2':               _sample(rng, 0.5,   4.5),
+                'heading':              _sample(rng, 0,     360),
+                'latitude':             _sample(rng, 43,    52),
+                'longitude':            _sample(rng, 20,    40),
+                'electronic_signature': 'IFF_MODE_3C',
                 'flight_profile':       'STABLE_CRUISE',
                 'weather':              w,
-                'thermal_signature':    weather_thermal('High', w),
+                'thermal_signature':    _thermal('High', w, rng),
             })
-        elif scenario == 'covert':
+        elif scn == 'covert':           # slow approach → looks like SUSPECT/UNKNOWN
             rows.append({
                 'classification':       'HOSTILE',
-                'altitude_ft':          n(rng.uniform(500, 12000), 600),
-                'speed_kts':            n(rng.uniform(280, 520), 30),
-                'rcs_m2':               rng.uniform(1.0, 6.0),
-                'heading':              rng.uniform(0, 360),
-                'latitude':             rng.uniform(43, 50),
-                'longitude':            rng.uniform(25, 42),
+                'altitude_ft':          _sample(rng, 500,   12000, 600),
+                'speed_kts':            _sample(rng, 250,   520,   30),
+                'rcs_m2':               _sample(rng, 1.0,   7.0),
+                'heading':              _sample(rng, 0,     360),
+                'latitude':             _sample(rng, 43,    50),
+                'longitude':            _sample(rng, 25,    42),
                 'electronic_signature': rng.choice(['NO_IFF_RESPONSE', 'UNKNOWN_EMISSION'], p=[0.6, 0.4]),
                 'flight_profile':       'STABLE_CRUISE',
                 'weather':              w,
-                'thermal_signature':    weather_thermal(
-                    rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w),
+                'thermal_signature':    _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
             })
-        else:  # canonical
-            alt = rng.choice([
-                n(rng.uniform(200,   7000),  400),
-                n(rng.uniform(42000, 60000), 1000),
-            ])
+        else:                           # canonical — low-alt dash or hi-alt sprint
+            alt = rng.choice([_sample(rng, 200, 7000, 400),
+                              _sample(rng, 42000, 60000, 1000)])
             rows.append({
                 'classification':       'HOSTILE',
                 'altitude_ft':          max(200, alt),
-                'speed_kts':            n(rng.uniform(500, 1200), 50),
-                'rcs_m2':               rng.uniform(0.01, 3.0),
-                'heading':              rng.uniform(0, 360),
-                'latitude':             rng.uniform(42, 50),
-                'longitude':            rng.uniform(25, 42),
-                'electronic_signature': rng.choice(
-                    ['HOSTILE_JAMMING', 'NO_IFF_RESPONSE'], p=[0.45, 0.55]),
-                'flight_profile':       rng.choice(
-                    ['AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING'], p=[0.6, 0.4]),
+                'speed_kts':            _sample(rng, 500,   1200, 50),
+                'rcs_m2':               _sample(rng, 0.01,  3.0),
+                'heading':              _sample(rng, 0,     360),
+                'latitude':             _sample(rng, 42,    50),
+                'longitude':            _sample(rng, 25,    42),
+                'electronic_signature': rng.choice(['HOSTILE_JAMMING', 'NO_IFF_RESPONSE'], p=[0.45, 0.55]),
+                'flight_profile':       rng.choice(['AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING'], p=[0.6, 0.4]),
                 'weather':              w,
-                'thermal_signature':    weather_thermal('High', w),
+                'thermal_signature':    _thermal('High', w, rng),
             })
+    return rows
 
-        # ── S  SUSPECT ────────────────────────────────────────────────────
-        # Ambiguous: shares feature space with both HOSTILE and UNKNOWN
-        # No IFF + wrong area + variable aggression
-        # Some look very hostile, some look almost unknown
-        w = rng.choice(W, p=WP)
-        aggressiveness = rng.random()   # 0=unknown-like, 1=hostile-like
+
+def _rows_SUSPECT(rng, n):
+    rows = []
+    for _ in range(n):
+        w   = rng.choice(W, p=WP)
+        agg = rng.random()   # 0 = unknown-like, 1 = hostile-like
         rows.append({
             'classification':       'SUSPECT',
-            'altitude_ft':          n(rng.uniform(1000, 35000), 1500),
-            'speed_kts':            n(rng.uniform(280 + aggressiveness * 300, 600 + aggressiveness * 300), 40),
-            'rcs_m2':               rng.uniform(0.5 + (1 - aggressiveness) * 5, 6 + (1 - aggressiveness) * 12),
-            'heading':              rng.uniform(0, 360),
-            'latitude':             rng.uniform(43, 53),
-            'longitude':            rng.uniform(18, 42),
-            'electronic_signature': rng.choice(
-                ['NO_IFF_RESPONSE', 'UNKNOWN_EMISSION', 'HOSTILE_JAMMING'],
-                p=[0.55, 0.35, 0.10]),
-            'flight_profile':       rng.choice(
-                ['AGGRESSIVE_MANEUVERS', 'STABLE_CRUISE', 'CLIMBING'],
-                p=[0.40, 0.35, 0.25]),
+            'altitude_ft':          _sample(rng, 1000,  35000, 1500),
+            'speed_kts':            _sample(rng, 280 + agg * 300, 600 + agg * 300, 40),
+            'rcs_m2':               _sample(rng, 0.5 + (1 - agg) * 4, 7 + (1 - agg) * 10),
+            'heading':              _sample(rng, 0,     360),
+            'latitude':             _sample(rng, 43,    53),
+            'longitude':            _sample(rng, 18,    42),
+            'electronic_signature': rng.choice(['NO_IFF_RESPONSE', 'UNKNOWN_EMISSION', 'HOSTILE_JAMMING'],
+                                               p=[0.55, 0.35, 0.10]),
+            'flight_profile':       rng.choice(['AGGRESSIVE_MANEUVERS', 'STABLE_CRUISE', 'CLIMBING'],
+                                               p=[0.40, 0.35, 0.25]),
             'weather':              w,
-            'thermal_signature':    weather_thermal(
-                rng.choice(['Medium', 'High', 'Low'], p=[0.45, 0.35, 0.20]), w),
+            'thermal_signature':    _thermal(rng.choice(['Medium', 'High', 'Low'], p=[0.45, 0.35, 0.20]), w, rng),
         })
+    return rows
 
-        # ── U  UNKNOWN ────────────────────────────────────────────────────
-        # Truly unidentified: broad distribution overlapping SUSPECT + NEUTRAL
-        # Represents contacts that just appeared — no history, no context
+
+def _rows_UNKNOWN(rng, n):
+    rows = []
+    for _ in range(n):
         w = rng.choice(W, p=WP)
         rows.append({
             'classification':       'UNKNOWN',
-            'altitude_ft':          n(rng.uniform(500, 50000), 2500),
-            'speed_kts':            n(rng.uniform(80, 780), 40),
-            'rcs_m2':               rng.uniform(0.3, 55.0),
-            'heading':              rng.uniform(0, 360),
-            'latitude':             rng.uniform(42, 58),
-            'longitude':            rng.uniform(-5, 42),
-            'electronic_signature': rng.choice(
-                ['UNKNOWN_EMISSION', 'NO_IFF_RESPONSE', 'IFF_MODE_3C'],
-                p=[0.60, 0.30, 0.10]),
-            'flight_profile':       rng.choice(
-                ['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS'],
-                p=[0.65, 0.25, 0.10]),
+            'altitude_ft':          _sample(rng, 500,   50000, 2500),
+            'speed_kts':            _sample(rng, 80,    780,   40),
+            'rcs_m2':               _sample(rng, 0.3,   55.0),
+            'heading':              _sample(rng, 0,     360),
+            'latitude':             _sample(rng, 42,    58),
+            'longitude':            _sample(rng, -5,    42),
+            'electronic_signature': rng.choice(['UNKNOWN_EMISSION', 'NO_IFF_RESPONSE', 'IFF_MODE_3C'],
+                                               p=[0.60, 0.30, 0.10]),
+            'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS'],
+                                               p=[0.65, 0.25, 0.10]),
             'weather':              w,
-            'thermal_signature':    weather_thermal(
-                rng.choice(['Not_Detected', 'Low', 'Medium', 'High'],
-                            p=[0.35, 0.30, 0.25, 0.10]), w),
+            'thermal_signature':    _thermal(
+                rng.choice(['Not_Detected', 'Low', 'Medium', 'High'], p=[0.35, 0.30, 0.25, 0.10]), w, rng),
         })
+    return rows
 
-        # ── N  NEUTRAL ────────────────────────────────────────────────────
-        # Commercial/neutral-state aircraft
-        # 90% canonical: large RCS + IFF-3C + cruise altitude
-        # 10% ambiguous: smaller regional jet, occasionally UNKNOWN_EMISSION
-        w = rng.choice(W, p=WP)
-        ambiguous = rng.random() < 0.10
+
+def _rows_NEUTRAL(rng, n):
+    rows = []
+    for _ in range(n):
+        w   = rng.choice(W, p=WP)
+        amb = rng.random() < 0.12   # regional jet / ambiguous
         rows.append({
             'classification':       'NEUTRAL',
-            'altitude_ft':          n(rng.uniform(22000 if not ambiguous else 8000,
-                                                   42000 if not ambiguous else 28000), 800),
-            'speed_kts':            n(rng.uniform(350, 560), 25),
-            'rcs_m2':               rng.uniform(8 if ambiguous else 30,
-                                                 35 if ambiguous else 130),
-            'heading':              rng.uniform(0, 360),
-            'latitude':             rng.uniform(42, 56),
-            'longitude':            rng.uniform(-10, 35),
-            'electronic_signature': rng.choice(
-                ['IFF_MODE_3C', 'UNKNOWN_EMISSION'],
-                p=[0.75 if not ambiguous else 0.40,
-                   0.25 if not ambiguous else 0.60]),
+            'altitude_ft':          _sample(rng, 8000 if amb else 26000, 28000 if amb else 42000, 800),
+            'speed_kts':            _sample(rng, 320,   560,   25),
+            'rcs_m2':               _sample(rng, 8 if amb else 30, 35 if amb else 130),
+            'heading':              _sample(rng, 0,     360),
+            'latitude':             _sample(rng, 42,    56),
+            'longitude':            _sample(rng, -10,   35),
+            'electronic_signature': rng.choice(['IFF_MODE_3C', 'UNKNOWN_EMISSION'],
+                                               p=[0.72 if not amb else 0.38,
+                                                  0.28 if not amb else 0.62]),
             'flight_profile':       'STABLE_CRUISE',
             'weather':              w,
-            'thermal_signature':    weather_thermal('Medium', w),
+            'thermal_signature':    _thermal('Medium', w, rng),
         })
+    return rows
 
-        # ── A  ASSUMED FRIEND ─────────────────────────────────────────────
-        # Military with civil transponder — overlaps with both FRIEND and NEUTRAL
-        # 92% canonical: IFF-3C + military-ish speed/RCS
-        #  8% IFF degraded: looks like UNKNOWN
-        w = rng.choice(W, p=WP)
-        iff_degraded = rng.random() < 0.14
+
+def _rows_ASSUMED_FRIEND(rng, n):
+    rows = []
+    for _ in range(n):
+        w    = rng.choice(W, p=WP)
+        deg  = rng.random() < 0.14   # IFF degraded → looks like UNKNOWN
         rows.append({
             'classification':       'ASSUMED FRIEND',
-            'altitude_ft':          n(rng.uniform(12000, 40000), 1200),
-            'speed_kts':            n(rng.uniform(320, 680), 35),
-            'rcs_m2':               rng.uniform(4.0, 28.0),
-            'heading':              rng.uniform(0, 360),
-            'latitude':             rng.uniform(44, 55),
-            'longitude':            rng.uniform(3, 26),
-            'electronic_signature': 'UNKNOWN_EMISSION' if iff_degraded else 'IFF_MODE_3C',
-            'flight_profile':       rng.choice(
-                ['STABLE_CRUISE', 'CLIMBING'], p=[0.68, 0.32]),
+            'altitude_ft':          _sample(rng, 12000, 40000, 1200),
+            'speed_kts':            _sample(rng, 320,   680,   35),
+            'rcs_m2':               _sample(rng, 4.0,   28.0),
+            'heading':              _sample(rng, 0,     360),
+            'latitude':             _sample(rng, 44,    55),
+            'longitude':            _sample(rng, 3,     26),
+            'electronic_signature': 'UNKNOWN_EMISSION' if deg else 'IFF_MODE_3C',
+            'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.68, 0.32]),
             'weather':              w,
-            'thermal_signature':    weather_thermal(
-                rng.choice(['Low', 'Medium', 'High'], p=[0.30, 0.50, 0.20]), w),
+            'thermal_signature':    _thermal(
+                rng.choice(['Low', 'Medium', 'High'], p=[0.30, 0.50, 0.20]), w, rng),
         })
+    return rows
 
+
+def generate_dataset() -> pd.DataFrame:
+    rng = np.random.default_rng(SEED)
+    gen = {
+        'FRIEND':         _rows_FRIEND,
+        'HOSTILE':        _rows_HOSTILE,
+        'SUSPECT':        _rows_SUSPECT,
+        'UNKNOWN':        _rows_UNKNOWN,
+        'NEUTRAL':        _rows_NEUTRAL,
+        'ASSUMED FRIEND': _rows_ASSUMED_FRIEND,
+    }
+    rows = []
+    for cls, fn in gen.items():
+        rows.extend(fn(rng, CLASS_COUNTS[cls]))
     df = pd.DataFrame(rows).sample(frac=1, random_state=SEED).reset_index(drop=True)
     return df
 
@@ -258,34 +265,32 @@ class ImprovedAircraftClassifier(nn.Module):
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train():
+    total = sum(CLASS_COUNTS.values())
     print("=" * 64)
-    print("  VANGUARD AI — NATO Retrain  (realistic overlap v2)")
-    print("  Target: ~85-90% accuracy with meaningful class confusion")
+    print("  VANGUARD AI — NATO Retrain  v3  (realistic imbalance)")
     print("=" * 64)
+    print()
+    for cls, cnt in CLASS_COUNTS.items():
+        bar = '█' * int(cnt / total * 40)
+        print(f"  {cls:>15}  {bar:<40}  {cnt:4d}  ({cnt/total*100:.0f}%)")
 
-    print("\n[1/5] Generating dataset with realistic overlap…")
-    df = generate_dataset(n_per_class=1400)
-    print(f"      {len(df)} samples · {df['classification'].nunique()} classes")
-    for cls, cnt in df['classification'].value_counts().items():
-        print(f"        {cls}: {cnt}")
-
-    Path('data').mkdir(exist_ok=True)
+    print("\n[1/5] Generating dataset…")
+    df = generate_dataset()
+    print(f"      {len(df)} total samples")
     df.to_csv('data/vanguard_air_tracks_fused.csv', index=False)
-    print("      Saved data/vanguard_air_tracks_fused.csv")
 
     print("\n[2/5] Preprocessing…")
     cat      = ['electronic_signature', 'flight_profile', 'weather', 'thermal_signature']
-    X_raw    = pd.get_dummies(df.drop(columns=['classification']), columns=cat)
+    # lat/lon are positional context for display only — not behavioural features
+    X_raw    = pd.get_dummies(df.drop(columns=['classification', 'latitude', 'longitude']), columns=cat)
     feat_cols = list(X_raw.columns)
     le = LabelEncoder()
     y  = le.fit_transform(df['classification'])
-    print(f"      Features: {len(feat_cols)}   Classes: {list(le.classes_)}")
+    print(f"      Features: {len(feat_cols)}  Classes: {list(le.classes_)}")
 
     X = X_raw.values.astype(float)
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=0.20, random_state=SEED, stratify=y)
-    X_tr, X_va, y_tr, y_va = train_test_split(
-        X_tr, y_tr, test_size=0.125, random_state=SEED, stratify=y_tr)
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.20, random_state=SEED, stratify=y)
+    X_tr, X_va, y_tr, y_va = train_test_split(X_tr, y_tr, test_size=0.125, random_state=SEED, stratify=y_tr)
 
     scaler = RobustScaler()
     X_tr_s = scaler.fit_transform(X_tr)
@@ -293,13 +298,14 @@ def train():
     X_te_s = scaler.transform(X_te)
     print(f"      Train: {len(X_tr)}  Val: {len(X_va)}  Test: {len(X_te)}")
 
-    print("\n[3/5] Class weights (inverse frequency)…")
+    # Inverse-frequency class weights (penalise majority, boost minority)
     counts  = np.bincount(y_tr)
-    w_arr   = 1.0 / counts
+    w_arr   = 1.0 / np.sqrt(counts)   # sqrt damping — less aggressive than 1/n
     w_arr  /= w_arr.mean()
     class_w = torch.FloatTensor(w_arr)
+    print("\n[3/5] Class weights:")
     for i, c in enumerate(le.classes_):
-        print(f"        {c}: {class_w[i]:.3f}")
+        print(f"        {c:>15}: {class_w[i]:.3f}  (n={counts[i]})")
 
     BS       = 64
     train_dl = DataLoader(AircraftDataset(X_tr_s, y_tr), batch_size=BS, shuffle=True)
@@ -310,16 +316,13 @@ def train():
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
     criterion = nn.CrossEntropyLoss(weight=class_w)
 
-    best_val  = 0.0
-    patience  = 0
-    MAX_PAT   = 20
+    best_val, patience = 0.0, 0
 
     for epoch in range(1, 151):
         model.train()
         for Xb, yb in train_dl:
             optimizer.zero_grad()
-            loss = criterion(model(Xb), yb)
-            loss.backward()
+            criterion(model(Xb), yb).backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         scheduler.step()
@@ -333,15 +336,13 @@ def train():
             best_val = va
             torch.save({'model_state_dict': model.state_dict()}, 'models/best_model.pt')
             patience = 0
-            tag = ' <-- best'
+            print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}  <-- best")
         else:
             patience += 1
-            tag = ''
+            if epoch % 15 == 0:
+                print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}")
 
-        if epoch % 15 == 0 or tag:
-            print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}{tag}")
-
-        if patience >= MAX_PAT:
+        if patience >= 20:
             print(f"  Early stop at epoch {epoch}")
             break
 
@@ -352,12 +353,10 @@ def train():
     with torch.no_grad():
         tp = model(torch.FloatTensor(X_te_s)).argmax(1).numpy()
 
-    tl = le.inverse_transform(y_te)
-    pl = le.inverse_transform(tp)
+    tl, pl = le.inverse_transform(y_te), le.inverse_transform(tp)
     print(f"\n  Accuracy:    {accuracy_score(y_te, tp)*100:.1f}%")
     print(f"  F1 Macro:    {f1_score(y_te, tp, average='macro')*100:.1f}%")
-    print(f"  F1 Weighted: {f1_score(y_te, tp, average='weighted')*100:.1f}%")
-    print()
+    print(f"  F1 Weighted: {f1_score(y_te, tp, average='weighted')*100:.1f}%\n")
     print(classification_report(tl, pl))
 
     Path('models').mkdir(exist_ok=True)

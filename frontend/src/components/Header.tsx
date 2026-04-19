@@ -34,11 +34,11 @@ const CLS_COLOR: Record<string, string> = {
 }
 
 const MODEL_FEATURES = [
-  { group: 'Kinematic',     color: '#a78bfa', items: ['Altitude (ft)', 'Speed (kts)', 'Heading (°)', 'Latitude', 'Longitude'] },
+  { group: 'Kinematic',     color: '#a78bfa', items: ['Altitude (ft)', 'Speed (kts)', 'Heading (°)'] },
   { group: 'Radar',         color: '#fb923c', items: ['Radar Cross-Section (m²)'] },
-  { group: 'Electronic',    color: '#38bdf8', items: ['Electronic Signature / IFF'] },
-  { group: 'Thermal',       color: '#f472b6', items: ['Thermal Signature (IRST)'] },
-  { group: 'Environmental', color: '#4ade80', items: ['Weather condition', 'Flight Profile'] },
+  { group: 'Electronic',    color: '#38bdf8', items: ['IFF Mode (one-hot × 5)'] },
+  { group: 'Thermal',       color: '#f472b6', items: ['Thermal Signature (IRST × 4)'] },
+  { group: 'Environmental', color: '#4ade80', items: ['Weather (×3)', 'Flight Profile (×4)'] },
 ]
 
 export default function Header({ pendingCount, approvedCount, selected, threatScore }: Props) {
@@ -184,10 +184,11 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
               <p style={{ color: '#38bdf8aa', fontFamily: 'Orbitron, monospace', fontSize: 9, letterSpacing: 3, marginBottom: 10 }}>ARCHITECTURE</p>
               <div className="flex items-center gap-1 flex-wrap">
                 {[
-                  { label: 'Input',    sub: '10 features',                    color: '#475569' },
-                  { label: 'Dense 64', sub: 'BatchNorm · ReLU · Dropout 0.2', color: '#38bdf8' },
-                  { label: 'Dense 32', sub: 'BatchNorm · ReLU · Dropout 0.2', color: '#38bdf8' },
-                  { label: 'Output',   sub: '6 classes · Softmax',            color: '#22c55e' },
+                  { label: 'Input',     sub: '20 features',                    color: '#475569' },
+                  { label: 'Dense 128', sub: 'BatchNorm · ReLU · Dropout 0.3', color: '#38bdf8' },
+                  { label: 'Dense 64',  sub: 'BatchNorm · ReLU · Dropout 0.2', color: '#38bdf8' },
+                  { label: 'Dense 32',  sub: 'BatchNorm · ReLU · Dropout 0.1', color: '#38bdf8' },
+                  { label: 'Output',    sub: '6 classes · Softmax',            color: '#22c55e' },
                 ].map((layer, i, arr) => (
                   <div key={layer.label} className="flex items-center gap-1">
                     <div className="rounded-lg px-3 py-2 text-center"
@@ -203,7 +204,7 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
 
             {/* Features */}
             <div className="mb-5">
-              <p style={{ color: '#38bdf8aa', fontFamily: 'Orbitron, monospace', fontSize: 9, letterSpacing: 3, marginBottom: 10 }}>INPUT FEATURES (10)</p>
+              <p style={{ color: '#38bdf8aa', fontFamily: 'Orbitron, monospace', fontSize: 9, letterSpacing: 3, marginBottom: 10 }}>INPUT FEATURES (20 — after one-hot encoding)</p>
               <div className="space-y-1.5">
                 {MODEL_FEATURES.map(({ group, color, items }) => (
                   <div key={group} className="flex items-start gap-2">
@@ -423,7 +424,7 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
 
             <div className="space-y-3">
               {[
-                { color: '#a78bfa', title: 'AI Confidence — Black box',       body: 'The PyTorch MLP sees all 10 features simultaneously as a single vector and outputs a softmax probability. It learned patterns from training data — it does not know which sensor gave which reading.' },
+                { color: '#a78bfa', title: 'AI Confidence — Black box',       body: 'The PyTorch MLP sees all 20 features simultaneously as a single vector and outputs a softmax probability. It learned patterns from training data — it does not know which sensor gave which reading.' },
                 { color: '#38bdf8', title: 'Fused Probability — Transparent', body: 'Each sensor (Radar w=0.40, ESM w=0.35, IRST w=0.15, IFF w=0.10) votes independently, then their votes are weighted and summed. Weather degrades IRST confidence in real-time.' },
                 { color: '#f59e0b', title: 'Why the gap matters',             body: 'A large gap means the model "learned" a pattern the raw sensors do not fully confirm. In real systems this triggers human review — which is exactly what the Expert Approval button is for.' },
               ].map(({ color, title, body }) => (
