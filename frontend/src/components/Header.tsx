@@ -144,6 +144,14 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
             <span style={{ color: '#475569', fontFamily: 'Space Grotesk' }}> approved</span>
           </div>
 
+          {/* Simulation link */}
+          <a href="/sim"
+             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+             style={{ textDecoration: 'none' }}>
+            <span style={{ fontSize: 13 }}>🎯</span>
+            <span style={{ color: '#38bdf8', fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: 1 }}>SIM</span>
+          </a>
+
           {/* Clock */}
           <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'rgba(56,189,248,0.5)', letterSpacing: 3 }}>
             {clock}

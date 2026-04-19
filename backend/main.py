@@ -2,7 +2,7 @@
 VANGUARD AI — FastAPI Backend
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import torch
@@ -494,3 +494,79 @@ def predict_endpoint(req: PredictRequest):
         "fusion":         fusion,
         "weather_impact": {w: round(irst_base * f, 2) for w, f in WEATHER_IRST_FACTOR.items()},
     }
+
+
+# ── SIMULATION ENDPOINTS ──────────────────────────────────────────────────────
+
+from backend.sim import sim_mgr, assign_position
+import uuid as _uuid
+
+class SimSubmitRequest(BaseModel):
+    altitude_ft:       float
+    speed_kts:         float
+    rcs_m2:            float
+    heading:           float
+    esm_signature:     str
+    iff_mode:          str
+    flight_profile:    str
+    weather:           str
+    thermal_signature: str
+
+
+@app.post("/sim/sessions")
+def create_sim_session():
+    sid = sim_mgr.create_session()
+    return {"session_id": sid}
+
+
+@app.get("/sim/{session_id}/tracks")
+def get_sim_tracks(session_id: str):
+    if not sim_mgr.session_exists(session_id):
+        raise HTTPException(404, "Session not found")
+    return {
+        "session_id":        session_id,
+        "tracks":            sim_mgr.get_tracks(session_id),
+        "participant_count": sim_mgr.participant_count(session_id),
+    }
+
+
+@app.post("/sim/{session_id}/submit")
+async def submit_sim_track(session_id: str, req: SimSubmitRequest):
+    if not _model_ready:
+        raise HTTPException(503, "Model not loaded")
+    if not sim_mgr.session_exists(session_id):
+        raise HTTPException(404, "Session not found")
+
+    inp    = {**req.model_dump(), "latitude": 0.0, "longitude": 0.0}
+    result = predict_aircraft(inp)
+    sv     = track_sensor_votes(inp)
+    fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+    pos    = assign_position(result["classification"])
+
+    track = {
+        "track_id":    f"SIM-{str(_uuid.uuid4())[:4].upper()}",
+        "submitted_at": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+        "ai_class":    result["classification"],
+        "ai_conf":     result["confidence"],
+        "pos":         pos,
+        "sensor_votes": sv,
+        "fusion":      fusion,
+        **req.model_dump(),
+    }
+
+    sim_mgr.add_track(session_id, track)
+    await sim_mgr.broadcast(session_id, {"type": "new_track", "track": track})
+    return track
+
+
+@app.websocket("/sim/{session_id}/ws")
+async def sim_ws(session_id: str, ws: WebSocket):
+    if not sim_mgr.session_exists(session_id):
+        await ws.close(code=4004)
+        return
+    await sim_mgr.connect(session_id, ws)
+    try:
+        while True:
+            await ws.receive_text()   # keep-alive ping
+    except WebSocketDisconnect:
+        sim_mgr.disconnect(session_id, ws)

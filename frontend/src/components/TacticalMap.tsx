@@ -228,7 +228,7 @@ export default function TacticalMap({ tracks, selectedId, approvals, onSelect }:
 
                 {/* IFF row */}
                 <div style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 11, color: '#94a3b8' }}>
-                  {selTrack.electronic_signature}
+                  ESM: {selTrack.esm_signature} · IFF: {selTrack.iff_mode}
                   <span style={{ marginLeft: 8, color: '#475569' }}>
                     {selTrack.weather} · {selTrack.thermal_signature}
                   </span>

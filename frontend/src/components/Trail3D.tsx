@@ -91,7 +91,7 @@ export default function Trail3D({ track }: Props) {
 
       {/* 3D Maneuver Envelope */}
       <Plot
-        data={[
+        data={/* eslint-disable-next-line @typescript-eslint/no-explicit-any */ ([
           // Trail line
           {
             type: 'scatter3d' as const,
@@ -149,7 +149,7 @@ export default function Trail3D({ track }: Props) {
           // Maneuver event markers (top-3 turns)
           {
             type: 'scatter3d' as const,
-            mode: 'markers+text' as const,
+            mode: 'markers+text' as any,
             x: eventIdx.map(i => tIdx[i]),
             y: eventIdx.map(i => altsKft[i]),
             z: eventIdx.map(i => spds[i]),
@@ -175,7 +175,7 @@ export default function Trail3D({ track }: Props) {
           // Current position
           {
             type: 'scatter3d' as const,
-            mode: 'markers+text' as const,
+            mode: 'markers+text' as any,
             x: [tIdx[n - 1]],
             y: [altsKft[n - 1]],
             z: [spds[n - 1]],
@@ -193,7 +193,7 @@ export default function Trail3D({ track }: Props) {
             showlegend:   false,
             name:         'Current',
           },
-        ]}
+        ] as any)}
         layout={{
           height:        340,
           paper_bgcolor: 'rgba(0,0,0,0)',
