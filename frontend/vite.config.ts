@@ -13,6 +13,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
         ws: true,
+        // Don't proxy page navigation (HTML requests) — let React Router handle them
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return req.url
+        },
       },
     },
   },
