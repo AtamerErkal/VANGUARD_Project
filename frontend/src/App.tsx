@@ -150,7 +150,8 @@ export default function App() {
                       </p>
                     </div>
                     <div className="text-right space-y-1 flex-shrink-0" style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.8 }}>
-                      <div style={{ color: '#94a3b8' }}>{selected.electronic_signature}</div>
+                      <div style={{ color: '#94a3b8' }}>ESM: {selected.esm_signature}</div>
+                      <div style={{ color: '#94a3b8' }}>IFF: {selected.iff_mode}</div>
                       <div style={{ color: '#94a3b8' }}>{selected.flight_profile}</div>
                       <div><span style={{ color: '#64748b', fontSize: 11 }}>Alt </span>{selected.altitude_ft.toLocaleString()} ft</div>
                       <div><span style={{ color: '#64748b', fontSize: 11 }}>Spd </span>{selected.speed_kts.toFixed(0)} kts &nbsp;<span style={{ color: '#64748b', fontSize: 11 }}>RCS </span>{selected.rcs_m2.toFixed(1)} m²</div>

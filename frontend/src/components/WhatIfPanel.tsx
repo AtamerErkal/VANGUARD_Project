@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Track, PredictResponse } from '../types'
-import { CLASS_STYLES, SIGNATURES, PROFILES, WEATHER_OPTS, THERMAL_OPTS } from '../types'
+import { CLASS_STYLES, ESM_SIGS, IFF_MODES, PROFILES, WEATHER_OPTS, THERMAL_OPTS } from '../types'
 import { api } from '../api'
 import XAIPanel from './XAIPanel'
 
@@ -9,24 +9,32 @@ interface Props { track: Track }
 const WEATHER_IRST_FACTOR: Record<string, number> = { Clear: 1.0, Cloudy: 0.55, Rainy: 0.30 }
 const WEATHER_ICON: Record<string, string>        = { Clear: '☀️', Cloudy: '⛅', Rainy: '🌧️' }
 
+const ESM_PRESETS = [
+  { label: 'Clean',         icon: '📡', val: 'CLEAN',            tip: 'No unusual emissions — civil or friendly' },
+  { label: 'Unknown Emiss', icon: '❓', val: 'UNKNOWN_EMISSION', tip: 'Some emission detected, unidentified' },
+  { label: 'Noise Jamming', icon: '📶', val: 'NOISE_JAMMING',    tip: 'Broadband jamming — suspicious' },
+  { label: 'Hostile Jam',   icon: '⚡', val: 'HOSTILE_JAMMING',  tip: 'Targeted electronic attack' },
+]
+
 const IFF_PRESETS = [
-  { label: 'Disable IFF',      icon: '📵', sig: 'NO_IFF_RESPONSE',   tip: 'Enemy goes radio-silent' },
-  { label: 'Spoof Civilian',   icon: '✈️', sig: 'IFF_MODE_3C',        tip: 'Enemy mimics civil squawk' },
-  { label: 'Military Mode',    icon: '🛡️', sig: 'IFF_MODE_5',         tip: 'Friendly identification' },
-  { label: 'Active Jamming',   icon: '⚡', sig: 'HOSTILE_JAMMING',    tip: 'Electronic warfare engaged' },
+  { label: 'Military (5)', icon: '🛡️', val: 'IFF_MODE_5',  tip: 'Mode-5 military crypto — confirmed friend' },
+  { label: 'Civil (3C)',   icon: '✈️', val: 'IFF_MODE_3C',  tip: 'Civil altitude squawk' },
+  { label: 'Degraded',     icon: '⚠️', val: 'DEGRADED',     tip: 'Intermittent transponder signal' },
+  { label: 'No Response',  icon: '📵', val: 'NO_RESPONSE',  tip: 'No IFF reply received' },
 ]
 
 export default function WhatIfPanel({ track }: Props) {
-  const [open,     setOpen]     = useState(false)
-  const [alt,      setAlt]      = useState(track.altitude_ft)
-  const [spd,      setSpd]      = useState(track.speed_kts)
-  const [rcs,      setRcs]      = useState(track.rcs_m2)
-  const [esig,     setEsig]     = useState(track.electronic_signature)
-  const [fp,       setFp]       = useState(track.flight_profile)
-  const [weather,  setWeather]  = useState(track.weather)
-  const [thermal,  setThermal]  = useState(track.thermal_signature)
-  const [result,   setResult]   = useState<PredictResponse | null>(null)
-  const [loading,  setLoading]  = useState(false)
+  const [open,    setOpen]    = useState(false)
+  const [alt,     setAlt]     = useState(track.altitude_ft)
+  const [spd,     setSpd]     = useState(track.speed_kts)
+  const [rcs,     setRcs]     = useState(track.rcs_m2)
+  const [esmSig,  setEsmSig]  = useState(track.esm_signature)
+  const [iffMode, setIffMode] = useState(track.iff_mode)
+  const [fp,      setFp]      = useState(track.flight_profile)
+  const [weather, setWeather] = useState(track.weather)
+  const [thermal, setThermal] = useState(track.thermal_signature)
+  const [result,  setResult]  = useState<PredictResponse | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const classify = async () => {
     setLoading(true)
@@ -35,7 +43,7 @@ export default function WhatIfPanel({ track }: Props) {
         altitude_ft: alt, speed_kts: spd, rcs_m2: rcs,
         latitude: track.latitude, longitude: track.longitude,
         heading: track.heading, weather, thermal_signature: thermal,
-        electronic_signature: esig, flight_profile: fp,
+        esm_signature: esmSig, iff_mode: iffMode, flight_profile: fp,
       })
       setResult(res)
     } catch (e) { console.error(e) }
@@ -64,25 +72,42 @@ export default function WhatIfPanel({ track }: Props) {
       {open && (
         <div className="px-4 py-4 space-y-5" style={{ background: 'rgba(8,12,20,0.95)' }}>
 
-          {/* ── IFF Scenario Presets ── */}
+          {/* ── ESM Scenario Presets ── */}
           <div className="space-y-2">
             <p className="text-xs tracking-widest uppercase" style={{ color: '#64748b', fontFamily: 'Orbitron, monospace', fontSize: 9 }}>
-              IFF Scenario Presets
+              ESM — Emission Signature
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {ESM_PRESETS.map(preset => (
+                <button key={preset.val} onClick={() => setEsmSig(preset.val)} title={preset.tip}
+                  className="text-left px-2.5 py-2 rounded-lg text-xs transition-all hover:brightness-125"
+                  style={{
+                    background: esmSig === preset.val ? 'rgba(251,146,60,0.15)' : 'rgba(12,18,30,0.8)',
+                    border:     `1px solid ${esmSig === preset.val ? 'rgba(251,146,60,0.5)' : 'rgba(56,189,248,0.1)'}`,
+                    color:      esmSig === preset.val ? '#fb923c' : '#64748b',
+                    fontFamily: 'Space Grotesk, sans-serif',
+                  }}>
+                  <span className="mr-1">{preset.icon}</span>{preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── IFF Mode Presets ── */}
+          <div className="space-y-2">
+            <p className="text-xs tracking-widest uppercase" style={{ color: '#64748b', fontFamily: 'Orbitron, monospace', fontSize: 9 }}>
+              IFF — Transponder Mode
             </p>
             <div className="grid grid-cols-2 gap-1.5">
               {IFF_PRESETS.map(preset => (
-                <button
-                  key={preset.sig}
-                  onClick={() => setEsig(preset.sig)}
-                  title={preset.tip}
+                <button key={preset.val} onClick={() => setIffMode(preset.val)} title={preset.tip}
                   className="text-left px-2.5 py-2 rounded-lg text-xs transition-all hover:brightness-125"
                   style={{
-                    background:  esig === preset.sig ? 'rgba(56,189,248,0.15)' : 'rgba(12,18,30,0.8)',
-                    border:      `1px solid ${esig === preset.sig ? 'rgba(56,189,248,0.5)' : 'rgba(56,189,248,0.1)'}`,
-                    color:       esig === preset.sig ? '#38bdf8' : '#64748b',
-                    fontFamily:  'Space Grotesk, sans-serif',
-                  }}
-                >
+                    background: iffMode === preset.val ? 'rgba(56,189,248,0.15)' : 'rgba(12,18,30,0.8)',
+                    border:     `1px solid ${iffMode === preset.val ? 'rgba(56,189,248,0.5)' : 'rgba(56,189,248,0.1)'}`,
+                    color:      iffMode === preset.val ? '#38bdf8' : '#64748b',
+                    fontFamily: 'Space Grotesk, sans-serif',
+                  }}>
                   <span className="mr-1">{preset.icon}</span>{preset.label}
                 </button>
               ))}

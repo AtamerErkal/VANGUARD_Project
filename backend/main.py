@@ -60,7 +60,7 @@ except Exception as e:
 
 def predict_aircraft(data: dict) -> dict:
     df = pd.DataFrame([data])
-    cat = ["electronic_signature", "flight_profile", "weather", "thermal_signature"]
+    cat = ["esm_signature", "iff_mode", "flight_profile", "weather", "thermal_signature"]
     df  = pd.get_dummies(df, columns=cat)
     for col in _feature_cols:
         if col not in df.columns:
@@ -81,36 +81,39 @@ def predict_aircraft(data: dict) -> dict:
 # ── XAI ──────────────────────────────────────────────────────────────────────
 
 _NEUTRAL = {
-    "electronic_signature": "UNKNOWN_EMISSION",
-    "flight_profile":       "STABLE_CRUISE",
-    "speed_kts":            400.0,
-    "rcs_m2":               8.0,
-    "thermal_signature":    "Not_Detected",
-    "altitude_ft":          25000.0,
-    "weather":              "Clear",
-    "heading":              180.0,
+    "esm_signature":     "UNKNOWN_EMISSION",
+    "iff_mode":          "NO_RESPONSE",
+    "flight_profile":    "STABLE_CRUISE",
+    "speed_kts":         400.0,
+    "rcs_m2":            8.0,
+    "thermal_signature": "Not_Detected",
+    "altitude_ft":       25000.0,
+    "weather":           "Clear",
+    "heading":           180.0,
 }
 
 _FEATURE_LABELS = {
-    "electronic_signature": "Electronic Signature (IFF)",
-    "flight_profile":       "Flight Profile",
-    "speed_kts":            "Speed",
-    "rcs_m2":               "Radar Cross-Section",
-    "thermal_signature":    "Thermal Signature (IRST)",
-    "altitude_ft":          "Altitude",
-    "weather":              "Weather / IRST Fidelity",
-    "heading":              "Heading",
+    "esm_signature":     "ESM — Emission Signature",
+    "iff_mode":          "IFF — Transponder Mode",
+    "flight_profile":    "Flight Profile",
+    "speed_kts":         "Speed",
+    "rcs_m2":            "Radar Cross-Section",
+    "thermal_signature": "Thermal Signature (IRST)",
+    "altitude_ft":       "Altitude",
+    "weather":           "Weather / IRST Fidelity",
+    "heading":           "Heading",
 }
 
 _FEATURE_GROUPS = {
-    "electronic_signature": "Electronic",
-    "flight_profile":       "Kinematic",
-    "speed_kts":            "Kinematic",
-    "rcs_m2":               "Radar",
-    "thermal_signature":    "Thermal",
-    "altitude_ft":          "Kinematic",
-    "weather":              "Environmental",
-    "heading":              "Kinematic",
+    "esm_signature":     "Electronic",
+    "iff_mode":          "Electronic",
+    "flight_profile":    "Kinematic",
+    "speed_kts":         "Kinematic",
+    "rcs_m2":            "Radar",
+    "thermal_signature": "Thermal",
+    "altitude_ft":       "Kinematic",
+    "weather":           "Environmental",
+    "heading":           "Kinematic",
 }
 
 
@@ -167,57 +170,59 @@ WEATHER_IRST_FACTOR = {"Clear": 1.0, "Cloudy": 0.55, "Rainy": 0.30}
 
 
 def track_sensor_votes(t: dict) -> dict:
-    sig, thermal, weather = t["electronic_signature"], t["thermal_signature"], t["weather"]
+    esm     = t.get("esm_signature", "UNKNOWN_EMISSION")
+    iff     = t.get("iff_mode",      "NO_RESPONSE")
+    thermal = t["thermal_signature"]
+    weather = t["weather"]
     rcs, alt, spd = t["rcs_m2"], t["altitude_ft"], t["speed_kts"]
 
-    # Radar: RCS + kinematics → class vote
-    if rcs < 3 and spd > 500:     rv, rc = "HOSTILE",        0.73
-    elif rcs > 25 and spd < 600:  rv, rc = "NEUTRAL",        0.78   # large slow → airliner/neutral
-    elif 4 <= rcs <= 25:          rv, rc = "FRIEND",         0.66
-    else:                         rv, rc = "UNKNOWN",        0.51
+    # ── Radar: RCS + kinematics ───────────────────────────────────────────────
+    if rcs < 3 and spd > 500:    rv, rc = "HOSTILE", 0.73
+    elif rcs > 25 and spd < 600: rv, rc = "NEUTRAL", 0.78
+    elif 4 <= rcs <= 25:         rv, rc = "FRIEND",  0.66
+    else:                        rv, rc = "UNKNOWN", 0.51
 
-    # ESM: electronic signature → class vote
+    # ── ESM: what is the aircraft emitting / jamming? ─────────────────────────
     esm_map = {
-        "IFF_MODE_5":        ("FRIEND",         0.95),
-        "IFF_MODE_3C":       ("ASSUMED FRIEND", 0.88),  # civil squawk — could be allied
-        "HOSTILE_JAMMING":   ("HOSTILE",        0.90),
-        "NO_IFF_RESPONSE":   ("SUSPECT",        0.76),  # no reply → suspect, not confirmed hostile
-        "UNKNOWN_EMISSION":  ("UNKNOWN",        0.52),
+        "CLEAN":            ("NEUTRAL",        0.72),   # quiet — civil or friendly
+        "UNKNOWN_EMISSION": ("UNKNOWN",        0.52),   # some emission, unidentified
+        "NOISE_JAMMING":    ("SUSPECT",        0.78),   # broadband jamming → suspicious
+        "HOSTILE_JAMMING":  ("HOSTILE",        0.90),   # targeted EA → hostile
     }
-    ev, ec = esm_map.get(sig, ("UNKNOWN", 0.40))
+    ev, ec = esm_map.get(esm, ("UNKNOWN", 0.40))
 
-    # IRST: thermal signature → class vote (weather-degraded)
+    # ── IRST: thermal signature (weather-degraded) ────────────────────────────
     th_map = {
-        "High":         ("HOSTILE",  0.78),
-        "Medium":       ("SUSPECT",  0.55),
-        "Low":          ("NEUTRAL",  0.65),
-        "Not_Detected": ("UNKNOWN",  0.40),
+        "High":         ("HOSTILE", 0.78),
+        "Medium":       ("SUSPECT", 0.55),
+        "Low":          ("NEUTRAL", 0.65),
+        "Not_Detected": ("UNKNOWN", 0.40),
     }
     iv, ic_base = th_map.get(thermal, ("UNKNOWN", 0.40))
     ic = round(ic_base * WEATHER_IRST_FACTOR.get(weather, 1.0), 2)
 
-    # IFF system: transponder response → class vote
+    # ── IFF: what does the transponder say? ───────────────────────────────────
     iff_map = {
-        "IFF_MODE_5":        ("FRIEND",         0.98),
-        "IFF_MODE_3C":       ("ASSUMED FRIEND", 0.93),
-        "HOSTILE_JAMMING":   ("HOSTILE",        0.88),
-        "NO_IFF_RESPONSE":   ("SUSPECT",        0.84),
-        "UNKNOWN_EMISSION":  ("UNKNOWN",        0.55),
+        "IFF_MODE_5":  ("FRIEND",         0.98),   # military crypto — confirmed friend
+        "IFF_MODE_3C": ("ASSUMED FRIEND", 0.88),   # civil squawk — probably neutral/allied
+        "DEGRADED":    ("UNKNOWN",        0.55),   # intermittent — could be equipment fault
+        "NO_RESPONSE": ("SUSPECT",        0.84),   # no reply → suspect
     }
-    fv, fc = iff_map.get(sig, ("UNKNOWN", 0.40))
+    fv, fc = iff_map.get(iff, ("UNKNOWN", 0.40))
 
     weather_note = f" · degraded ×{WEATHER_IRST_FACTOR.get(weather, 1)}" if weather != "Clear" else ""
 
     return {
         "radar": {"label": "Active Radar",  "icon": "📡", "vote": rv, "conf": rc,
                   "reading": f"Alt {alt:,.0f} ft · {spd:.0f} kts · RCS {rcs:.1f} m²"},
-        "esm":   {"label": "ESM Suite",     "icon": "📻", "vote": ev, "conf": ec, "reading": sig},
+        "esm":   {"label": "ESM Suite",     "icon": "📻", "vote": ev, "conf": ec,
+                  "reading": esm},
         "irst":  {"label": "IRST Camera",   "icon": "🔥", "vote": iv, "conf": ic,
                   "reading": f"Thermal: {thermal}{weather_note}",
                   "weather_factor": WEATHER_IRST_FACTOR.get(weather, 1.0),
                   "base_conf": ic_base},
         "iff":   {"label": "IFF System",    "icon": "🆔", "vote": fv, "conf": fc,
-                  "reading": sig + (" · L2 encrypted" if sig == "IFF_MODE_5" else "")},
+                  "reading": iff + (" · L2 encrypted" if iff == "IFF_MODE_5" else "")},
     }
 
 
@@ -240,43 +245,49 @@ def compute_fusion(sensor_votes: dict, weights: dict) -> dict:
 
 
 def detect_anomalies(t: dict) -> list:
-    sig, profile = t["electronic_signature"], t["flight_profile"]
+    esm     = t.get("esm_signature", "UNKNOWN_EMISSION")
+    iff     = t.get("iff_mode",      "NO_RESPONSE")
+    profile = t["flight_profile"]
     rcs, alt, spd, thermal = t["rcs_m2"], t["altitude_ft"], t["speed_kts"], t["thermal_signature"]
     out = []
-    if sig in ("IFF_MODE_3C", "IFF_MODE_5") and profile == "AGGRESSIVE_MANEUVERS":
+    if iff in ("IFF_MODE_3C", "IFF_MODE_5") and profile == "AGGRESSIVE_MANEUVERS":
         out.append({"title": "IFF–Maneuver Conflict",
-                    "desc": f"{sig} active but AGGRESSIVE_MANEUVERS — possible IFF spoofing"})
-    if sig == "IFF_MODE_3C" and rcs < 5.0:
+                    "desc": f"{iff} active but AGGRESSIVE_MANEUVERS — possible IFF spoofing"})
+    if iff == "IFF_MODE_3C" and rcs < 5.0:
         out.append({"title": "RCS–IFF Mismatch",
-                    "desc": f"Civilian IFF but RCS = {rcs:.1f} m² — too small for commercial airframe"})
-    if sig == "IFF_MODE_3C" and alt < 10000 and spd > 500:
+                    "desc": f"Civilian squawk but RCS = {rcs:.1f} m² — too small for commercial airframe"})
+    if iff == "IFF_MODE_3C" and alt < 10000 and spd > 500:
         out.append({"title": "Kinematic Anomaly",
                     "desc": f"Civil squawk + alt {alt:,.0f} ft + {spd:.0f} kts — inconsistent with civil profile"})
+    if esm in ("HOSTILE_JAMMING", "NOISE_JAMMING") and iff in ("IFF_MODE_3C", "IFF_MODE_5"):
+        out.append({"title": "ESM–IFF Conflict",
+                    "desc": f"Active jamming ({esm}) while squawking {iff} — deception scenario"})
     if profile == "LOW_ALTITUDE_FLYING" and alt < 1000:
         out.append({"title": "Terrain Hugging",
                     "desc": f"Alt {alt:,.0f} ft — possible NOE / terrain-masking flight"})
-    if sig == "NO_IFF_RESPONSE" and spd > 600:
+    if iff == "NO_RESPONSE" and spd > 600:
         out.append({"title": "High-Speed Non-Cooperative",
-                    "desc": f"No IFF + {spd:.0f} kts — intercept criteria met"})
-    if sig == "HOSTILE_JAMMING" and thermal == "Low":
+                    "desc": f"No IFF response + {spd:.0f} kts — intercept criteria met"})
+    if esm == "HOSTILE_JAMMING" and thermal == "Low":
         out.append({"title": "Signature Conflict",
-                    "desc": "Jamming detected but low thermal — stealth platform or sensor malfunction"})
+                    "desc": "Active jamming but low thermal — possible stealth platform"})
     return out
 
 
 # ── Track generation ──────────────────────────────────────────────────────────
 
+# (lat, lon, alt, spd, rcs, hdg, esm_signature, iff_mode, flight_profile, thermal, weather)
 _CONFIGS = [
-    (45.2, 35.8, 7500,  680, 1.1, 270, "HOSTILE_JAMMING",    "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
-    (44.8, 34.2, 1200,  720, 0.6, 315, "NO_IFF_RESPONSE",    "LOW_ALTITUDE_FLYING",  "High",   "Clear"),
-    (51.5,  0.1, 35000, 450, 18,   90, "IFF_MODE_3C",        "STABLE_CRUISE",        "Low",    "Clear"),
-    (50.8,  2.3, 33000, 440, 15,   85, "IFF_MODE_3C",        "STABLE_CRUISE",        "Low",    "Cloudy"),
-    (51.2, 12.4, 25000, 410,  6,   45, "IFF_MODE_5",         "STABLE_CRUISE",        "Medium", "Clear"),
-    (52.1, 14.8, 18000, 390,  5.5, 60, "IFF_MODE_5",         "CLIMBING",             "Medium", "Clear"),
-    (47.1, 22.3, 14000, 430,  3.2,195, "UNKNOWN_EMISSION",   "CLIMBING",             "Medium", "Cloudy"),
-    (46.5, 20.1,  9000, 510,  2.8,220, "NO_IFF_RESPONSE",    "AGGRESSIVE_MANEUVERS", "Medium", "Clear"),
-    (49.8,  8.5, 29000, 400, 12,  110, "IFF_MODE_3C",        "STABLE_CRUISE",        "Low",    "Clear"),
-    (48.3, 26.7,  5500, 610,  1.4,260, "IFF_MODE_3C",        "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
+    (45.2, 35.8,  7500, 680, 1.1, 270, "HOSTILE_JAMMING",   "NO_RESPONSE",  "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
+    (44.8, 34.2,  1200, 720, 0.6, 315, "UNKNOWN_EMISSION",  "NO_RESPONSE",  "LOW_ALTITUDE_FLYING",  "High",   "Clear"),
+    (51.5,  0.1, 35000, 450,  18,  90, "CLEAN",             "IFF_MODE_3C",  "STABLE_CRUISE",        "Low",    "Clear"),
+    (50.8,  2.3, 33000, 440,  15,  85, "CLEAN",             "IFF_MODE_3C",  "STABLE_CRUISE",        "Low",    "Cloudy"),
+    (51.2, 12.4, 25000, 410,   6,  45, "CLEAN",             "IFF_MODE_5",   "STABLE_CRUISE",        "Medium", "Clear"),
+    (52.1, 14.8, 18000, 390, 5.5,  60, "CLEAN",             "IFF_MODE_5",   "CLIMBING",             "Medium", "Clear"),
+    (47.1, 22.3, 14000, 430, 3.2, 195, "UNKNOWN_EMISSION",  "NO_RESPONSE",  "CLIMBING",             "Medium", "Cloudy"),
+    (46.5, 20.1,  9000, 510, 2.8, 220, "NOISE_JAMMING",     "NO_RESPONSE",  "AGGRESSIVE_MANEUVERS", "Medium", "Clear"),
+    (49.8,  8.5, 29000, 400,  12, 110, "CLEAN",             "IFF_MODE_3C",  "STABLE_CRUISE",        "Low",    "Clear"),
+    (48.3, 26.7,  5500, 610, 1.4, 260, "NOISE_JAMMING",     "IFF_MODE_3C",  "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
 ]
 
 _N_HIST    = 9
@@ -288,7 +299,7 @@ def _build_tracks():
     now    = datetime.now(timezone.utc)
     tracks = []
 
-    for i, (lat, lon, alt, spd, rcs, hdg, esig, fp, thermal, weather) in enumerate(_CONFIGS):
+    for i, (lat, lon, alt, spd, rcs, hdg, esm, iff, fp, thermal, weather) in enumerate(_CONFIGS):
         lat += np.random.normal(0, 0.05)
         lon += np.random.normal(0, 0.05)
 
@@ -325,7 +336,7 @@ def _build_tracks():
         ] + [now.strftime("%H:%M UTC")]
 
         inp = dict(altitude_ft=alt, speed_kts=spd, rcs_m2=rcs, latitude=lat, longitude=lon,
-                   heading=hdg, electronic_signature=esig, flight_profile=fp,
+                   heading=hdg, esm_signature=esm, iff_mode=iff, flight_profile=fp,
                    weather=weather, thermal_signature=thermal)
 
         try:
@@ -385,7 +396,7 @@ def compute_model_stats() -> dict:
         return _model_stats_cache
 
     df  = pd.read_csv(_DATA_PATH)
-    cat = ["electronic_signature", "flight_profile", "weather", "thermal_signature"]
+    cat = ["esm_signature", "iff_mode", "flight_profile", "weather", "thermal_signature"]
     X_raw = pd.get_dummies(df.drop(columns=["classification"]), columns=cat)
     for col in _feature_cols:
         if col not in X_raw.columns:
@@ -446,16 +457,17 @@ def tracks_endpoint():
 
 
 class PredictRequest(BaseModel):
-    altitude_ft:          float
-    speed_kts:            float
-    rcs_m2:               float
-    latitude:             float
-    longitude:            float
-    heading:              float
-    electronic_signature: str
-    flight_profile:       str
-    weather:              str
-    thermal_signature:    str
+    altitude_ft:      float
+    speed_kts:        float
+    rcs_m2:           float
+    latitude:         float
+    longitude:        float
+    heading:          float
+    esm_signature:    str
+    iff_mode:         str
+    flight_profile:   str
+    weather:          str
+    thermal_signature: str
 
 
 @app.get("/api/model-stats")

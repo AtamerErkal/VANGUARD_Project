@@ -37,9 +37,10 @@ export interface Track {
   speed_kts:            number
   rcs_m2:               number
   heading:              number
-  weather:              string
-  electronic_signature: string
-  flight_profile:       string
+  weather:          string
+  esm_signature:    string
+  iff_mode:         string
+  flight_profile:   string
   thermal_signature:    string
   ai_class:             string
   ai_conf:              number
@@ -76,16 +77,17 @@ export interface ModelStats {
 }
 
 export interface PredictRequest {
-  altitude_ft:          number
-  speed_kts:            number
-  rcs_m2:               number
-  latitude:             number
-  longitude:            number
-  heading:              number
-  electronic_signature: string
-  flight_profile:       string
-  weather:              string
-  thermal_signature:    string
+  altitude_ft:       number
+  speed_kts:         number
+  rcs_m2:            number
+  latitude:          number
+  longitude:         number
+  heading:           number
+  esm_signature:     string
+  iff_mode:          string
+  flight_profile:    string
+  weather:           string
+  thermal_signature: string
 }
 
 export interface PredictResponse {
@@ -119,5 +121,6 @@ export const SENSOR_ORDER = ['radar', 'esm', 'irst', 'iff'] as const
 
 export const WEATHER_OPTS = ['Clear', 'Cloudy', 'Rainy'] as const
 export const THERMAL_OPTS = ['Not_Detected', 'Low', 'Medium', 'High'] as const
-export const SIGNATURES   = ['IFF_MODE_5', 'IFF_MODE_3C', 'NO_IFF_RESPONSE', 'HOSTILE_JAMMING', 'UNKNOWN_EMISSION'] as const
+export const ESM_SIGS     = ['CLEAN', 'UNKNOWN_EMISSION', 'NOISE_JAMMING', 'HOSTILE_JAMMING'] as const
+export const IFF_MODES    = ['IFF_MODE_5', 'IFF_MODE_3C', 'DEGRADED', 'NO_RESPONSE'] as const
 export const PROFILES     = ['STABLE_CRUISE', 'AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING', 'CLIMBING'] as const

@@ -53,20 +53,21 @@ W, WP = ['Clear', 'Cloudy', 'Rainy'], [0.65, 0.25, 0.10]
 def _rows_FRIEND(rng, n):
     rows = []
     for _ in range(n):
-        w = rng.choice(W, p=WP)
-        radio_silence = rng.random() < 0.10   # covert op → looks like SUSPECT
+        w             = rng.choice(W, p=WP)
+        radio_silence = rng.random() < 0.10   # covert op → no IFF + unknown ESM
         rows.append({
-            'classification':       'FRIEND',
-            'altitude_ft':          _sample(rng, 8000,  45000, 1200),
-            'speed_kts':            _sample(rng, 350,   780,   35),
-            'rcs_m2':               _sample(rng, 3.0,   22.0),
-            'heading':              _sample(rng, 0,     360),
-            'latitude':             _sample(rng, 46,    56),
-            'longitude':            _sample(rng, 5,     22),
-            'electronic_signature': 'NO_IFF_RESPONSE' if radio_silence else 'IFF_MODE_5',
-            'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.65, 0.35]),
-            'weather':              w,
-            'thermal_signature':    _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
+            'classification':  'FRIEND',
+            'altitude_ft':     _sample(rng, 8000,  45000, 1200),
+            'speed_kts':       _sample(rng, 350,   780,   35),
+            'rcs_m2':          _sample(rng, 3.0,   22.0),
+            'heading':         _sample(rng, 0,     360),
+            'latitude':        _sample(rng, 46,    56),
+            'longitude':       _sample(rng, 5,     22),
+            'esm_signature':   'UNKNOWN_EMISSION' if radio_silence else 'CLEAN',
+            'iff_mode':        'NO_RESPONSE'  if radio_silence else 'IFF_MODE_5',
+            'flight_profile':  rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.65, 0.35]),
+            'weather':         w,
+            'thermal_signature': _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
         })
     return rows
 
@@ -77,49 +78,52 @@ def _rows_HOSTILE(rng, n):
         w   = rng.choice(W, p=WP)
         scn = rng.choice(['canonical', 'spoof_civil', 'covert'], p=[0.65, 0.22, 0.13])
 
-        if scn == 'spoof_civil':        # mimics NEUTRAL/ASSUMED FRIEND
+        if scn == 'spoof_civil':        # mimics NEUTRAL — clean ESM + civil squawk
             rows.append({
-                'classification':       'HOSTILE',
-                'altitude_ft':          _sample(rng, 28000, 40000, 800),
-                'speed_kts':            _sample(rng, 400,   560,   25),
-                'rcs_m2':               _sample(rng, 0.5,   4.5),
-                'heading':              _sample(rng, 0,     360),
-                'latitude':             _sample(rng, 43,    52),
-                'longitude':            _sample(rng, 20,    40),
-                'electronic_signature': 'IFF_MODE_3C',
-                'flight_profile':       'STABLE_CRUISE',
-                'weather':              w,
-                'thermal_signature':    _thermal('High', w, rng),
+                'classification':    'HOSTILE',
+                'altitude_ft':       _sample(rng, 28000, 40000, 800),
+                'speed_kts':         _sample(rng, 400,   560,   25),
+                'rcs_m2':            _sample(rng, 0.5,   4.5),
+                'heading':           _sample(rng, 0,     360),
+                'latitude':          _sample(rng, 43,    52),
+                'longitude':         _sample(rng, 20,    40),
+                'esm_signature':     'CLEAN',           # spoofing: clean emissions
+                'iff_mode':          'IFF_MODE_3C',     # spoofing: civil squawk
+                'flight_profile':    'STABLE_CRUISE',
+                'weather':           w,
+                'thermal_signature': _thermal('High', w, rng),
             })
-        elif scn == 'covert':           # slow approach → looks like SUSPECT/UNKNOWN
+        elif scn == 'covert':           # slow approach → unknown ESM, no IFF
             rows.append({
-                'classification':       'HOSTILE',
-                'altitude_ft':          _sample(rng, 500,   12000, 600),
-                'speed_kts':            _sample(rng, 250,   520,   30),
-                'rcs_m2':               _sample(rng, 1.0,   7.0),
-                'heading':              _sample(rng, 0,     360),
-                'latitude':             _sample(rng, 43,    50),
-                'longitude':            _sample(rng, 25,    42),
-                'electronic_signature': rng.choice(['NO_IFF_RESPONSE', 'UNKNOWN_EMISSION'], p=[0.6, 0.4]),
-                'flight_profile':       'STABLE_CRUISE',
-                'weather':              w,
-                'thermal_signature':    _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
+                'classification':    'HOSTILE',
+                'altitude_ft':       _sample(rng, 500,   12000, 600),
+                'speed_kts':         _sample(rng, 250,   520,   30),
+                'rcs_m2':            _sample(rng, 1.0,   7.0),
+                'heading':           _sample(rng, 0,     360),
+                'latitude':          _sample(rng, 43,    50),
+                'longitude':         _sample(rng, 25,    42),
+                'esm_signature':     'UNKNOWN_EMISSION',
+                'iff_mode':          'NO_RESPONSE',
+                'flight_profile':    'STABLE_CRUISE',
+                'weather':           w,
+                'thermal_signature': _thermal(rng.choice(['Medium', 'High'], p=[0.5, 0.5]), w, rng),
             })
-        else:                           # canonical — low-alt dash or hi-alt sprint
+        else:                           # canonical — active jamming, no IFF
             alt = rng.choice([_sample(rng, 200, 7000, 400),
                               _sample(rng, 42000, 60000, 1000)])
             rows.append({
-                'classification':       'HOSTILE',
-                'altitude_ft':          max(200, alt),
-                'speed_kts':            _sample(rng, 500,   1200, 50),
-                'rcs_m2':               _sample(rng, 0.01,  3.0),
-                'heading':              _sample(rng, 0,     360),
-                'latitude':             _sample(rng, 42,    50),
-                'longitude':            _sample(rng, 25,    42),
-                'electronic_signature': rng.choice(['HOSTILE_JAMMING', 'NO_IFF_RESPONSE'], p=[0.45, 0.55]),
-                'flight_profile':       rng.choice(['AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING'], p=[0.6, 0.4]),
-                'weather':              w,
-                'thermal_signature':    _thermal('High', w, rng),
+                'classification':    'HOSTILE',
+                'altitude_ft':       max(200, alt),
+                'speed_kts':         _sample(rng, 500,   1200, 50),
+                'rcs_m2':            _sample(rng, 0.01,  3.0),
+                'heading':           _sample(rng, 0,     360),
+                'latitude':          _sample(rng, 42,    50),
+                'longitude':         _sample(rng, 25,    42),
+                'esm_signature':     rng.choice(['HOSTILE_JAMMING', 'NOISE_JAMMING'], p=[0.55, 0.45]),
+                'iff_mode':          'NO_RESPONSE',
+                'flight_profile':    rng.choice(['AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING'], p=[0.6, 0.4]),
+                'weather':           w,
+                'thermal_signature': _thermal('High', w, rng),
             })
     return rows
 
@@ -128,21 +132,23 @@ def _rows_SUSPECT(rng, n):
     rows = []
     for _ in range(n):
         w   = rng.choice(W, p=WP)
-        agg = rng.random()   # 0 = unknown-like, 1 = hostile-like
+        agg = rng.random()
         rows.append({
-            'classification':       'SUSPECT',
-            'altitude_ft':          _sample(rng, 1000,  35000, 1500),
-            'speed_kts':            _sample(rng, 280 + agg * 300, 600 + agg * 300, 40),
-            'rcs_m2':               _sample(rng, 0.5 + (1 - agg) * 4, 7 + (1 - agg) * 10),
-            'heading':              _sample(rng, 0,     360),
-            'latitude':             _sample(rng, 43,    53),
-            'longitude':            _sample(rng, 18,    42),
-            'electronic_signature': rng.choice(['NO_IFF_RESPONSE', 'UNKNOWN_EMISSION', 'HOSTILE_JAMMING'],
-                                               p=[0.55, 0.35, 0.10]),
-            'flight_profile':       rng.choice(['AGGRESSIVE_MANEUVERS', 'STABLE_CRUISE', 'CLIMBING'],
-                                               p=[0.40, 0.35, 0.25]),
-            'weather':              w,
-            'thermal_signature':    _thermal(rng.choice(['Medium', 'High', 'Low'], p=[0.45, 0.35, 0.20]), w, rng),
+            'classification':    'SUSPECT',
+            'altitude_ft':       _sample(rng, 1000,  35000, 1500),
+            'speed_kts':         _sample(rng, 280 + agg * 300, 600 + agg * 300, 40),
+            'rcs_m2':            _sample(rng, 0.5 + (1 - agg) * 4, 7 + (1 - agg) * 10),
+            'heading':           _sample(rng, 0,     360),
+            'latitude':          _sample(rng, 43,    53),
+            'longitude':         _sample(rng, 18,    42),
+            'esm_signature':     rng.choice(['UNKNOWN_EMISSION', 'NOISE_JAMMING', 'HOSTILE_JAMMING'],
+                                            p=[0.55, 0.35, 0.10]),
+            'iff_mode':          rng.choice(['NO_RESPONSE', 'IFF_MODE_3C', 'DEGRADED'],
+                                            p=[0.55, 0.35, 0.10]),
+            'flight_profile':    rng.choice(['AGGRESSIVE_MANEUVERS', 'STABLE_CRUISE', 'CLIMBING'],
+                                            p=[0.40, 0.35, 0.25]),
+            'weather':           w,
+            'thermal_signature': _thermal(rng.choice(['Medium', 'High', 'Low'], p=[0.45, 0.35, 0.20]), w, rng),
         })
     return rows
 
@@ -152,19 +158,21 @@ def _rows_UNKNOWN(rng, n):
     for _ in range(n):
         w = rng.choice(W, p=WP)
         rows.append({
-            'classification':       'UNKNOWN',
-            'altitude_ft':          _sample(rng, 500,   50000, 2500),
-            'speed_kts':            _sample(rng, 80,    780,   40),
-            'rcs_m2':               _sample(rng, 0.3,   55.0),
-            'heading':              _sample(rng, 0,     360),
-            'latitude':             _sample(rng, 42,    58),
-            'longitude':            _sample(rng, -5,    42),
-            'electronic_signature': rng.choice(['UNKNOWN_EMISSION', 'NO_IFF_RESPONSE', 'IFF_MODE_3C'],
-                                               p=[0.60, 0.30, 0.10]),
-            'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS'],
-                                               p=[0.65, 0.25, 0.10]),
-            'weather':              w,
-            'thermal_signature':    _thermal(
+            'classification':    'UNKNOWN',
+            'altitude_ft':       _sample(rng, 500,   50000, 2500),
+            'speed_kts':         _sample(rng, 80,    780,   40),
+            'rcs_m2':            _sample(rng, 0.3,   55.0),
+            'heading':           _sample(rng, 0,     360),
+            'latitude':          _sample(rng, 42,    58),
+            'longitude':         _sample(rng, -5,    42),
+            'esm_signature':     rng.choice(['UNKNOWN_EMISSION', 'CLEAN', 'NOISE_JAMMING'],
+                                            p=[0.60, 0.30, 0.10]),
+            'iff_mode':          rng.choice(['NO_RESPONSE', 'IFF_MODE_3C', 'DEGRADED'],
+                                            p=[0.55, 0.35, 0.10]),
+            'flight_profile':    rng.choice(['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS'],
+                                            p=[0.65, 0.25, 0.10]),
+            'weather':           w,
+            'thermal_signature': _thermal(
                 rng.choice(['Not_Detected', 'Low', 'Medium', 'High'], p=[0.35, 0.30, 0.25, 0.10]), w, rng),
         })
     return rows
@@ -176,19 +184,18 @@ def _rows_NEUTRAL(rng, n):
         w   = rng.choice(W, p=WP)
         amb = rng.random() < 0.12   # regional jet / ambiguous
         rows.append({
-            'classification':       'NEUTRAL',
-            'altitude_ft':          _sample(rng, 8000 if amb else 26000, 28000 if amb else 42000, 800),
-            'speed_kts':            _sample(rng, 320,   560,   25),
-            'rcs_m2':               _sample(rng, 8 if amb else 30, 35 if amb else 130),
-            'heading':              _sample(rng, 0,     360),
-            'latitude':             _sample(rng, 42,    56),
-            'longitude':            _sample(rng, -10,   35),
-            'electronic_signature': rng.choice(['IFF_MODE_3C', 'UNKNOWN_EMISSION'],
-                                               p=[0.72 if not amb else 0.38,
-                                                  0.28 if not amb else 0.62]),
-            'flight_profile':       'STABLE_CRUISE',
-            'weather':              w,
-            'thermal_signature':    _thermal('Medium', w, rng),
+            'classification':    'NEUTRAL',
+            'altitude_ft':       _sample(rng, 8000 if amb else 26000, 28000 if amb else 42000, 800),
+            'speed_kts':         _sample(rng, 320,   560,   25),
+            'rcs_m2':            _sample(rng, 8 if amb else 30, 35 if amb else 130),
+            'heading':           _sample(rng, 0,     360),
+            'latitude':          _sample(rng, 42,    56),
+            'longitude':         _sample(rng, -10,   35),
+            'esm_signature':     'UNKNOWN_EMISSION' if amb else 'CLEAN',
+            'iff_mode':          'DEGRADED' if amb else 'IFF_MODE_3C',
+            'flight_profile':    'STABLE_CRUISE',
+            'weather':           w,
+            'thermal_signature': _thermal('Medium', w, rng),
         })
     return rows
 
@@ -196,20 +203,21 @@ def _rows_NEUTRAL(rng, n):
 def _rows_ASSUMED_FRIEND(rng, n):
     rows = []
     for _ in range(n):
-        w    = rng.choice(W, p=WP)
-        deg  = rng.random() < 0.14   # IFF degraded → looks like UNKNOWN
+        w   = rng.choice(W, p=WP)
+        deg = rng.random() < 0.14   # IFF equipment degraded → looks like UNKNOWN
         rows.append({
-            'classification':       'ASSUMED FRIEND',
-            'altitude_ft':          _sample(rng, 12000, 40000, 1200),
-            'speed_kts':            _sample(rng, 320,   680,   35),
-            'rcs_m2':               _sample(rng, 4.0,   28.0),
-            'heading':              _sample(rng, 0,     360),
-            'latitude':             _sample(rng, 44,    55),
-            'longitude':            _sample(rng, 3,     26),
-            'electronic_signature': 'UNKNOWN_EMISSION' if deg else 'IFF_MODE_3C',
-            'flight_profile':       rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.68, 0.32]),
-            'weather':              w,
-            'thermal_signature':    _thermal(
+            'classification':    'ASSUMED FRIEND',
+            'altitude_ft':       _sample(rng, 12000, 40000, 1200),
+            'speed_kts':         _sample(rng, 320,   680,   35),
+            'rcs_m2':            _sample(rng, 4.0,   28.0),
+            'heading':           _sample(rng, 0,     360),
+            'latitude':          _sample(rng, 44,    55),
+            'longitude':         _sample(rng, 3,     26),
+            'esm_signature':     'UNKNOWN_EMISSION' if deg else 'CLEAN',
+            'iff_mode':          'DEGRADED' if deg else 'IFF_MODE_3C',
+            'flight_profile':    rng.choice(['STABLE_CRUISE', 'CLIMBING'], p=[0.68, 0.32]),
+            'weather':           w,
+            'thermal_signature': _thermal(
                 rng.choice(['Low', 'Medium', 'High'], p=[0.30, 0.50, 0.20]), w, rng),
         })
     return rows
@@ -280,7 +288,7 @@ def train():
     df.to_csv('data/vanguard_air_tracks_fused.csv', index=False)
 
     print("\n[2/5] Preprocessing…")
-    cat      = ['electronic_signature', 'flight_profile', 'weather', 'thermal_signature']
+    cat      = ['esm_signature', 'iff_mode', 'flight_profile', 'weather', 'thermal_signature']
     # lat/lon are positional context for display only — not behavioural features
     X_raw    = pd.get_dummies(df.drop(columns=['classification', 'latitude', 'longitude']), columns=cat)
     feat_cols = list(X_raw.columns)
