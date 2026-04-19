@@ -1,6 +1,5 @@
 """
 VANGUARD AI — FastAPI Backend
-Serves the PyTorch classification model and pre-computed track data.
 """
 
 from fastapi import FastAPI, HTTPException
@@ -12,21 +11,17 @@ import joblib
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 import sys
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 sys.path.append(str(Path(__file__).parent.parent))
 
-app = FastAPI(title="Vanguard AI API", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Vanguard AI API", version="2.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ── Model definition ──────────────────────────────────────────────────────────
+# ── Model ─────────────────────────────────────────────────────────────────────
 
 class ImprovedAircraftClassifier(nn.Module):
     def __init__(self, input_dim, num_classes=6):
@@ -34,20 +29,16 @@ class ImprovedAircraftClassifier(nn.Module):
         self.network = nn.Sequential(
             nn.Linear(input_dim, 64), nn.BatchNorm1d(64), nn.ReLU(), nn.Dropout(0.2),
             nn.Linear(64, 32),        nn.BatchNorm1d(32), nn.ReLU(), nn.Dropout(0.2),
-            nn.Linear(32, num_classes)
+            nn.Linear(32, num_classes),
         )
-
     def forward(self, x):
         return self.network(torch.clamp(x, -10, 10))
 
-
-# ── Model loading ─────────────────────────────────────────────────────────────
 
 def load_model():
     scaler        = joblib.load(MODELS_DIR / "scaler.joblib")
     label_encoder = joblib.load(MODELS_DIR / "label_encoder.joblib")
     feature_cols  = joblib.load(MODELS_DIR / "feature_columns.joblib")
-
     model = ImprovedAircraftClassifier(len(feature_cols), len(label_encoder.classes_))
     ckpt  = torch.load(MODELS_DIR / "best_model.pt", map_location="cpu")
     state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
@@ -62,12 +53,11 @@ except Exception as e:
     print(f"[WARN] Model not loaded: {e}")
     _model_ready = False
 
-
 # ── Inference ─────────────────────────────────────────────────────────────────
 
 def predict_aircraft(data: dict) -> dict:
     df = pd.DataFrame([data])
-    cat = ['electronic_signature', 'flight_profile', 'weather', 'thermal_signature']
+    cat = ["electronic_signature", "flight_profile", "weather", "thermal_signature"]
     df  = pd.get_dummies(df, columns=cat)
     for col in _feature_cols:
         if col not in df.columns:
@@ -78,18 +68,99 @@ def predict_aircraft(data: dict) -> dict:
         out   = _model(torch.FloatTensor(X))
         probs = torch.softmax(out, dim=1)
         conf, pred = torch.max(probs, 1)
-    cls   = _label_encoder.inverse_transform([pred.item()])[0]
+    cls = _label_encoder.inverse_transform([pred.item()])[0]
     return {
         "classification": cls,
-        "confidence": float(conf.item()),
-        "probabilities": {c: float(p) for c, p in zip(_label_encoder.classes_, probs[0].numpy())},
+        "confidence":     float(conf.item()),
+        "probabilities":  {c: float(p) for c, p in zip(_label_encoder.classes_, probs[0].numpy())},
     }
 
+# ── XAI ──────────────────────────────────────────────────────────────────────
 
-# ── Sensor votes & anomalies ──────────────────────────────────────────────────
+_NEUTRAL = {
+    "electronic_signature": "UNKNOWN_EMISSION",
+    "flight_profile":       "STABLE_CRUISE",
+    "speed_kts":            400.0,
+    "rcs_m2":               8.0,
+    "thermal_signature":    "Not_Detected",
+    "altitude_ft":          25000.0,
+    "weather":              "Clear",
+    "heading":              180.0,
+}
+
+_FEATURE_LABELS = {
+    "electronic_signature": "Electronic Signature (IFF)",
+    "flight_profile":       "Flight Profile",
+    "speed_kts":            "Speed",
+    "rcs_m2":               "Radar Cross-Section",
+    "thermal_signature":    "Thermal Signature (IRST)",
+    "altitude_ft":          "Altitude",
+    "weather":              "Weather / IRST Fidelity",
+    "heading":              "Heading",
+}
+
+_FEATURE_GROUPS = {
+    "electronic_signature": "Electronic",
+    "flight_profile":       "Kinematic",
+    "speed_kts":            "Kinematic",
+    "rcs_m2":               "Radar",
+    "thermal_signature":    "Thermal",
+    "altitude_ft":          "Kinematic",
+    "weather":              "Environmental",
+    "heading":              "Kinematic",
+}
+
+
+def compute_xai(track_input: dict, base_result: dict) -> list:
+    base_cls   = base_result["classification"]
+    base_p_cls = base_result["probabilities"].get(base_cls, base_result["confidence"])
+
+    items = []
+    for feature, neutral_val in _NEUTRAL.items():
+        if feature not in track_input:
+            continue
+        if track_input[feature] == neutral_val:
+            # Feature is already at neutral — still show with minimal importance
+            items.append({
+                "feature":   feature,
+                "label":     _FEATURE_LABELS[feature],
+                "group":     _FEATURE_GROUPS[feature],
+                "value":     str(track_input[feature]),
+                "importance": 0.01,
+                "direction": "neutral",
+                "delta":      0.0,
+            })
+            continue
+        perturbed = {**track_input, feature: neutral_val}
+        try:
+            p = predict_aircraft(perturbed)
+            p_conf = p["probabilities"].get(base_cls, 0.0)
+        except Exception:
+            continue
+        delta     = base_p_cls - p_conf          # positive → feature supports this class
+        direction = "supporting" if delta > 0.005 else ("conflicting" if delta < -0.005 else "neutral")
+        items.append({
+            "feature":    feature,
+            "label":      _FEATURE_LABELS[feature],
+            "group":      _FEATURE_GROUPS[feature],
+            "value":      str(track_input[feature]),
+            "importance": abs(delta),
+            "direction":  direction,
+            "delta":      round(delta, 4),
+        })
+
+    total = sum(i["importance"] for i in items) or 1
+    for item in items:
+        item["importance"] = round(item["importance"] / total, 3)
+
+    return sorted(items, key=lambda x: -x["importance"])
+
+# ── Sensor votes & fusion ──────────────────────────────────────────────────────
 
 SENSOR_ORDER        = ["radar", "esm", "irst", "iff"]
 SENSOR_BASE_WEIGHTS = {"radar": 0.40, "esm": 0.35, "irst": 0.15, "iff": 0.10}
+
+WEATHER_IRST_FACTOR = {"Clear": 1.0, "Cloudy": 0.55, "Rainy": 0.30}
 
 
 def track_sensor_votes(t: dict) -> dict:
@@ -108,22 +179,25 @@ def track_sensor_votes(t: dict) -> dict:
 
     th_map = {"High": ("HOSTILE", 0.78), "Medium": ("SUSPECT", 0.55),
               "Low": ("CIVILIAN", 0.70), "Not_Detected": ("NEUTRAL", 0.40)}
-    iv, ic = th_map.get(thermal, ("NEUTRAL", 0.40))
-    if weather != "Clear":
-        ic = round(ic * 0.55, 2)
+    iv, ic_base = th_map.get(thermal, ("NEUTRAL", 0.40))
+    ic = round(ic_base * WEATHER_IRST_FACTOR.get(weather, 1.0), 2)
 
     iff_map = {"IFF_MODE_5": ("FRIEND", 0.98), "IFF_MODE_3C": ("CIVILIAN", 0.96),
                "HOSTILE_JAMMING": ("HOSTILE", 0.88), "NO_IFF_RESPONSE": ("HOSTILE", 0.92),
                "UNKNOWN_EMISSION": ("NEUTRAL", 0.50)}
     fv, fc = iff_map.get(sig, ("NEUTRAL", 0.40))
 
+    weather_note = f" · degraded ×{WEATHER_IRST_FACTOR.get(weather, 1)}" if weather != "Clear" else ""
+
     return {
-        "radar": {"label": "Active Radar", "icon": "📡", "vote": rv, "conf": rc,
+        "radar": {"label": "Active Radar",  "icon": "📡", "vote": rv, "conf": rc,
                   "reading": f"Alt {alt:,.0f} ft · {spd:.0f} kts · RCS {rcs:.1f} m²"},
-        "esm":   {"label": "ESM Suite",    "icon": "📻", "vote": ev, "conf": ec, "reading": sig},
-        "irst":  {"label": "IRST Camera",  "icon": "🔥", "vote": iv, "conf": ic,
-                  "reading": f"Thermal: {thermal}" + (" · degraded" if weather != "Clear" else "")},
-        "iff":   {"label": "IFF System",   "icon": "🆔", "vote": fv, "conf": fc,
+        "esm":   {"label": "ESM Suite",     "icon": "📻", "vote": ev, "conf": ec, "reading": sig},
+        "irst":  {"label": "IRST Camera",   "icon": "🔥", "vote": iv, "conf": ic,
+                  "reading": f"Thermal: {thermal}{weather_note}",
+                  "weather_factor": WEATHER_IRST_FACTOR.get(weather, 1.0),
+                  "base_conf": ic_base},
+        "iff":   {"label": "IFF System",    "icon": "🆔", "vote": fv, "conf": fc,
                   "reading": sig + (" · L2 encrypted" if sig == "IFF_MODE_5" else "")},
     }
 
@@ -131,8 +205,8 @@ def track_sensor_votes(t: dict) -> dict:
 def compute_fusion(sensor_votes: dict, weights: dict) -> dict:
     classes = ["HOSTILE", "SUSPECT", "FRIEND", "ASSUMED FRIEND", "NEUTRAL", "CIVILIAN"]
     probs   = {c: 0.0 for c in classes}
-    total_w = sum(weights[s] for s in sensor_votes) or 1
-    norm_w  = {s: weights[s] / total_w for s in sensor_votes}
+    total_w = sum(weights.get(s, 0) for s in sensor_votes) or 1
+    norm_w  = {s: weights.get(s, 0) / total_w for s in sensor_votes}
     for s, vd in sensor_votes.items():
         voted, conf, w = vd["vote"], vd["conf"], norm_w[s]
         if voted in probs:
@@ -152,7 +226,7 @@ def detect_anomalies(t: dict) -> list:
     out = []
     if sig in ("IFF_MODE_3C", "IFF_MODE_5") and profile == "AGGRESSIVE_MANEUVERS":
         out.append({"title": "IFF–Maneuver Conflict",
-                    "desc": f"{sig} active but profile is AGGRESSIVE_MANEUVERS — possible IFF spoofing"})
+                    "desc": f"{sig} active but AGGRESSIVE_MANEUVERS — possible IFF spoofing"})
     if sig == "IFF_MODE_3C" and rcs < 5.0:
         out.append({"title": "RCS–IFF Mismatch",
                     "desc": f"Civilian IFF but RCS = {rcs:.1f} m² — too small for commercial airframe"})
@@ -171,7 +245,7 @@ def detect_anomalies(t: dict) -> list:
     return out
 
 
-# ── Track generation (cached at startup) ─────────────────────────────────────
+# ── Track generation ──────────────────────────────────────────────────────────
 
 _CONFIGS = [
     (45.2, 35.8, 7500,  680, 1.1, 270, "HOSTILE_JAMMING",    "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
@@ -186,21 +260,37 @@ _CONFIGS = [
     (48.3, 26.7,  5500, 610,  1.4,260, "IFF_MODE_3C",        "AGGRESSIVE_MANEUVERS", "High",   "Clear"),
 ]
 
+_N_HIST    = 9
+_STEP_MINS = 5
+
 
 def _build_tracks():
     np.random.seed(77)
+    now    = datetime.now(timezone.utc)
     tracks = []
+
     for i, (lat, lon, alt, spd, rcs, hdg, esig, fp, thermal, weather) in enumerate(_CONFIGS):
         lat += np.random.normal(0, 0.05)
         lon += np.random.normal(0, 0.05)
-        n, ang = 9, np.radians(hdg)
-        hlats = [lat - (n - j) * 0.09 * np.cos(ang) + np.random.normal(0, 0.015) for j in range(n)] + [lat]
-        hlons = [lon - (n - j) * 0.09 * np.sin(ang) + np.random.normal(0, 0.015) for j in range(n)] + [lon]
-        halts = [max(200, alt + (j - n) * np.random.uniform(80, 220)) for j in range(n)] + [alt]
+
+        ang   = np.radians(hdg)
+        hlats = [lat - (_N_HIST - j) * 0.09 * np.cos(ang) + np.random.normal(0, 0.015)
+                 for j in range(_N_HIST)] + [lat]
+        hlons = [lon - (_N_HIST - j) * 0.09 * np.sin(ang) + np.random.normal(0, 0.015)
+                 for j in range(_N_HIST)] + [lon]
+        halts = [max(200, alt + (j - _N_HIST) * np.random.uniform(80, 220))
+                 for j in range(_N_HIST)] + [alt]
+
+        # Timestamps: one per history point, _STEP_MINS apart, ending at now
+        tstamps = [
+            (now - timedelta(minutes=(_N_HIST - j) * _STEP_MINS)).strftime("%H:%M UTC")
+            for j in range(_N_HIST)
+        ] + [now.strftime("%H:%M UTC")]
 
         inp = dict(altitude_ft=alt, speed_kts=spd, rcs_m2=rcs, latitude=lat, longitude=lon,
                    heading=hdg, electronic_signature=esig, flight_profile=fp,
                    weather=weather, thermal_signature=thermal)
+
         try:
             res = predict_aircraft(inp)
         except Exception:
@@ -208,19 +298,30 @@ def _build_tracks():
 
         sv     = track_sensor_votes(inp)
         fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+        xai    = compute_xai(inp, res)
+
+        # Weather comparison for IRST
+        irst_base = sv["irst"]["base_conf"]
+        weather_impact = {
+            w: round(irst_base * f, 2)
+            for w, f in WEATHER_IRST_FACTOR.items()
+        }
 
         tracks.append({
             "track_id": f"TRK-{i+1:03d}",
             **inp,
-            "ai_class":    res["classification"],
-            "ai_conf":     res["confidence"],
-            "ai_probs":    res["probabilities"],
-            "sensor_votes": sv,
-            "fusion":      fusion,
-            "anomalies":   detect_anomalies(inp),
-            "hist_lats":   hlats,
-            "hist_lons":   hlons,
-            "hist_alts":   halts,
+            "ai_class":       res["classification"],
+            "ai_conf":        res["confidence"],
+            "ai_probs":       res["probabilities"],
+            "sensor_votes":   sv,
+            "fusion":         fusion,
+            "anomalies":      detect_anomalies(inp),
+            "xai":            xai,
+            "weather_impact": weather_impact,
+            "hist_lats":      hlats,
+            "hist_lons":      hlons,
+            "hist_alts":      halts,
+            "hist_timestamps": tstamps,
         })
     return tracks
 
@@ -249,20 +350,32 @@ def tracks_endpoint():
 
 
 class PredictRequest(BaseModel):
-    altitude_ft: float
-    speed_kts: float
-    rcs_m2: float
-    latitude: float
-    longitude: float
-    heading: float
+    altitude_ft:          float
+    speed_kts:            float
+    rcs_m2:               float
+    latitude:             float
+    longitude:            float
+    heading:              float
     electronic_signature: str
-    flight_profile: str
-    weather: str
-    thermal_signature: str
+    flight_profile:       str
+    weather:              str
+    thermal_signature:    str
 
 
 @app.post("/api/predict")
 def predict_endpoint(req: PredictRequest):
     if not _model_ready:
         raise HTTPException(503, "Model not loaded")
-    return predict_aircraft(req.model_dump())
+    inp    = req.model_dump()
+    result = predict_aircraft(inp)
+    xai    = compute_xai(inp, result)
+    sv     = track_sensor_votes(inp)
+    fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+    irst_base = sv["irst"]["base_conf"]
+    return {
+        **result,
+        "xai":            xai,
+        "sensor_votes":   sv,
+        "fusion":         fusion,
+        "weather_impact": {w: round(irst_base * f, 2) for w, f in WEATHER_IRST_FACTOR.items()},
+    }

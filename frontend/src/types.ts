@@ -1,9 +1,11 @@
 export interface SensorVote {
-  label:   string
-  icon:    string
-  vote:    string
-  conf:    number
-  reading: string
+  label:          string
+  icon:           string
+  vote:           string
+  conf:           number
+  reading:        string
+  weather_factor?: number
+  base_conf?:      number
 }
 
 export interface FusionResult {
@@ -15,6 +17,16 @@ export interface FusionResult {
 export interface Anomaly {
   title: string
   desc:  string
+}
+
+export interface XAIItem {
+  feature:    string
+  label:      string
+  group:      string
+  value:      string
+  importance: number
+  direction:  'supporting' | 'conflicting' | 'neutral'
+  delta:      number
 }
 
 export interface Track {
@@ -35,9 +47,12 @@ export interface Track {
   sensor_votes:         Record<string, SensorVote>
   fusion:               FusionResult
   anomalies:            Anomaly[]
+  xai:                  XAIItem[]
+  weather_impact:       Record<string, number>
   hist_lats:            number[]
   hist_lons:            number[]
   hist_alts:            number[]
+  hist_timestamps:      string[]
 }
 
 export interface PredictRequest {
@@ -57,6 +72,10 @@ export interface PredictResponse {
   classification: string
   confidence:     number
   probabilities:  Record<string, number>
+  xai:            XAIItem[]
+  sensor_votes:   Record<string, SensorVote>
+  fusion:         FusionResult
+  weather_impact: Record<string, number>
 }
 
 export type ApprovalAction = 'approved' | 'override'
@@ -76,3 +95,8 @@ export const CLASS_STYLES: Record<string, { color: string; bg: string; icon: str
 }
 
 export const SENSOR_ORDER = ['radar', 'esm', 'irst', 'iff'] as const
+
+export const WEATHER_OPTS = ['Clear', 'Cloudy', 'Rainy'] as const
+export const THERMAL_OPTS = ['Not_Detected', 'Low', 'Medium', 'High'] as const
+export const SIGNATURES   = ['IFF_MODE_5', 'IFF_MODE_3C', 'NO_IFF_RESPONSE', 'HOSTILE_JAMMING', 'UNKNOWN_EMISSION'] as const
+export const PROFILES     = ['STABLE_CRUISE', 'AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING', 'CLIMBING'] as const
