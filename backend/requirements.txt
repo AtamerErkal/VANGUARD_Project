@@ -1,7 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 # CPU-only torch — much smaller than full install (~200 MB vs ~700 MB)
-torch==2.3.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.0+cpu
 joblib==1.4.2
 numpy==1.26.4
 pandas==2.2.2
