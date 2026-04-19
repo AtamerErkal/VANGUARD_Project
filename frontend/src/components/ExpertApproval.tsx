@@ -8,7 +8,8 @@ interface Props {
   onDecide: (id: string, state: ApprovalState) => void
 }
 
-const CLASSES = ['HOSTILE', 'SUSPECT', 'FRIEND', 'ASSUMED FRIEND', 'NEUTRAL', 'CIVILIAN']
+// NATO standard order: threat descending
+const CLASSES = ['HOSTILE', 'SUSPECT', 'UNKNOWN', 'NEUTRAL', 'ASSUMED FRIEND', 'FRIEND']
 
 export default function ExpertApproval({ track, approval, onDecide }: Props) {
   const [overrideClass, setOverrideClass] = useState(track.ai_class)

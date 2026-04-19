@@ -37,7 +37,8 @@ export default function App() {
 
   const threatScore = Math.min(100, tracks.reduce((s, t) => {
     if (t.ai_class === 'HOSTILE')  return s + 15
-    if (t.ai_class === 'SUSPECT')  return s + 6
+    if (t.ai_class === 'SUSPECT')  return s + 8
+    if (t.ai_class === 'UNKNOWN')  return s + 3
     return s
   }, 0))
 

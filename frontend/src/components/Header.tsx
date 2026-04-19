@@ -26,11 +26,11 @@ function getThreatLevel(score: number) {
 // ── Per-class colors ──────────────────────────────────────────────────────────
 const CLS_COLOR: Record<string, string> = {
   HOSTILE:          '#ef4444',
-  SUSPECT:          '#f59e0b',
-  FRIEND:           '#22c55e',
-  'ASSUMED FRIEND': '#22c55e',
+  SUSPECT:          '#f97316',
+  UNKNOWN:          '#a78bfa',
   NEUTRAL:          '#94a3b8',
-  CIVILIAN:         '#38bdf8',
+  'ASSUMED FRIEND': '#34d399',
+  FRIEND:           '#22c55e',
 }
 
 const MODEL_FEATURES = [

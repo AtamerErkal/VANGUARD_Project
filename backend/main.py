@@ -169,25 +169,41 @@ def track_sensor_votes(t: dict) -> dict:
     sig, thermal, weather = t["electronic_signature"], t["thermal_signature"], t["weather"]
     rcs, alt, spd = t["rcs_m2"], t["altitude_ft"], t["speed_kts"]
 
-    if rcs < 3 and spd > 500:     rv, rc = "HOSTILE",  0.73
-    elif rcs > 10 and spd < 500:  rv, rc = "CIVILIAN", 0.81
-    elif 4 <= rcs <= 10:          rv, rc = "FRIEND",   0.66
-    else:                         rv, rc = "SUSPECT",  0.51
+    # Radar: RCS + kinematics → class vote
+    if rcs < 3 and spd > 500:     rv, rc = "HOSTILE",        0.73
+    elif rcs > 25 and spd < 600:  rv, rc = "NEUTRAL",        0.78   # large slow → airliner/neutral
+    elif 4 <= rcs <= 25:          rv, rc = "FRIEND",         0.66
+    else:                         rv, rc = "UNKNOWN",        0.51
 
-    esm_map = {"IFF_MODE_5": ("FRIEND", 0.95), "IFF_MODE_3C": ("CIVILIAN", 0.92),
-               "HOSTILE_JAMMING": ("HOSTILE", 0.90), "NO_IFF_RESPONSE": ("HOSTILE", 0.76),
-               "UNKNOWN_EMISSION": ("SUSPECT", 0.45)}
-    ev, ec = esm_map.get(sig, ("NEUTRAL", 0.40))
+    # ESM: electronic signature → class vote
+    esm_map = {
+        "IFF_MODE_5":        ("FRIEND",         0.95),
+        "IFF_MODE_3C":       ("ASSUMED FRIEND", 0.88),  # civil squawk — could be allied
+        "HOSTILE_JAMMING":   ("HOSTILE",        0.90),
+        "NO_IFF_RESPONSE":   ("SUSPECT",        0.76),  # no reply → suspect, not confirmed hostile
+        "UNKNOWN_EMISSION":  ("UNKNOWN",        0.52),
+    }
+    ev, ec = esm_map.get(sig, ("UNKNOWN", 0.40))
 
-    th_map = {"High": ("HOSTILE", 0.78), "Medium": ("SUSPECT", 0.55),
-              "Low": ("CIVILIAN", 0.70), "Not_Detected": ("NEUTRAL", 0.40)}
-    iv, ic_base = th_map.get(thermal, ("NEUTRAL", 0.40))
+    # IRST: thermal signature → class vote (weather-degraded)
+    th_map = {
+        "High":         ("HOSTILE",  0.78),
+        "Medium":       ("SUSPECT",  0.55),
+        "Low":          ("NEUTRAL",  0.65),
+        "Not_Detected": ("UNKNOWN",  0.40),
+    }
+    iv, ic_base = th_map.get(thermal, ("UNKNOWN", 0.40))
     ic = round(ic_base * WEATHER_IRST_FACTOR.get(weather, 1.0), 2)
 
-    iff_map = {"IFF_MODE_5": ("FRIEND", 0.98), "IFF_MODE_3C": ("CIVILIAN", 0.96),
-               "HOSTILE_JAMMING": ("HOSTILE", 0.88), "NO_IFF_RESPONSE": ("HOSTILE", 0.92),
-               "UNKNOWN_EMISSION": ("NEUTRAL", 0.50)}
-    fv, fc = iff_map.get(sig, ("NEUTRAL", 0.40))
+    # IFF system: transponder response → class vote
+    iff_map = {
+        "IFF_MODE_5":        ("FRIEND",         0.98),
+        "IFF_MODE_3C":       ("ASSUMED FRIEND", 0.93),
+        "HOSTILE_JAMMING":   ("HOSTILE",        0.88),
+        "NO_IFF_RESPONSE":   ("SUSPECT",        0.84),
+        "UNKNOWN_EMISSION":  ("UNKNOWN",        0.55),
+    }
+    fv, fc = iff_map.get(sig, ("UNKNOWN", 0.40))
 
     weather_note = f" · degraded ×{WEATHER_IRST_FACTOR.get(weather, 1)}" if weather != "Clear" else ""
 
@@ -205,7 +221,7 @@ def track_sensor_votes(t: dict) -> dict:
 
 
 def compute_fusion(sensor_votes: dict, weights: dict) -> dict:
-    classes = ["HOSTILE", "SUSPECT", "FRIEND", "ASSUMED FRIEND", "NEUTRAL", "CIVILIAN"]
+    classes = ["HOSTILE", "SUSPECT", "FRIEND", "ASSUMED FRIEND", "NEUTRAL", "UNKNOWN"]
     probs   = {c: 0.0 for c in classes}
     total_w = sum(weights.get(s, 0) for s in sensor_votes) or 1
     norm_w  = {s: weights.get(s, 0) / total_w for s in sensor_votes}

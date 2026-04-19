@@ -105,13 +105,14 @@ export interface ApprovalState {
   override_class?: string
 }
 
-export const CLASS_STYLES: Record<string, { color: string; bg: string; icon: string }> = {
-  'HOSTILE':        { color: '#ef4444', bg: '#450a0a', icon: '🚨' },
-  'SUSPECT':        { color: '#f59e0b', bg: '#451a03', icon: '⚠️' },
-  'FRIEND':         { color: '#22c55e', bg: '#064e3b', icon: '🛡️' },
-  'ASSUMED FRIEND': { color: '#22c55e', bg: '#064e3b', icon: '🤝' },
-  'NEUTRAL':        { color: '#94a3b8', bg: '#1e293b', icon: '🏳️' },
-  'CIVILIAN':       { color: '#38bdf8', bg: '#0c4a6e', icon: '✈️' },
+// NATO standard air picture classification (STANAG)
+export const CLASS_STYLES: Record<string, { color: string; bg: string; icon: string; nato: string }> = {
+  'HOSTILE':        { color: '#ef4444', bg: '#450a0a', icon: '🚨', nato: 'H' },
+  'SUSPECT':        { color: '#f97316', bg: '#431407', icon: '⚠️', nato: 'S' },
+  'UNKNOWN':        { color: '#a78bfa', bg: '#2e1065', icon: '❓', nato: 'U' },
+  'NEUTRAL':        { color: '#94a3b8', bg: '#1e293b', icon: '🏳️', nato: 'N' },
+  'ASSUMED FRIEND': { color: '#34d399', bg: '#064e3b', icon: '🤝', nato: 'A' },
+  'FRIEND':         { color: '#22c55e', bg: '#14532d', icon: '🛡️', nato: 'F' },
 }
 
 export const SENSOR_ORDER = ['radar', 'esm', 'irst', 'iff'] as const
