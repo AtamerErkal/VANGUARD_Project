@@ -22,8 +22,8 @@ export default function AnomalyAlerts({ anomalies }: Props) {
           className="rounded-xl px-3 py-2.5"
           style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.28)', borderLeft: '3px solid #f59e0b' }}
         >
-          <p className="text-xs font-semibold mb-0.5" style={{ color: '#f59e0b' }}>⚠ {a.title}</p>
-          <p className="text-xs" style={{ color: '#92400e' }}>{a.desc}</p>
+          <p style={{ color: '#fbbf24', fontSize: 13, fontWeight: 700, marginBottom: 3 }}>⚠ {a.title}</p>
+          <p style={{ color: '#d97706', fontSize: 12 }}>{a.desc}</p>
         </div>
       ))}
     </div>

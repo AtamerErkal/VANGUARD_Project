@@ -203,9 +203,9 @@ export default function WhatIfPanel({ track }: Props) {
                       boxShadow:  glow ? `0 0 20px ${s.color}33` : 'none',
                       fontFamily: 'Orbitron, monospace',
                     }}>
-                    <div className="text-xs mb-1 tracking-widest" style={{ color: '#475569', fontSize: 9 }}>{label}</div>
-                    <div className="font-black" style={{ color: s.color, letterSpacing: 2, fontSize: 13 }}>{s.icon} {cls}</div>
-                    <div className="text-xs mt-1" style={{ color: '#475569' }}>{(conf * 100).toFixed(1)}%</div>
+                    <div style={{ color: '#94a3b8', fontSize: 10, letterSpacing: 2, marginBottom: 4 }}>{label}</div>
+                    <div style={{ color: s.color, letterSpacing: 2, fontSize: 14, fontWeight: 900 }}>{s.icon} {cls}</div>
+                    <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 4 }}>{(conf * 100).toFixed(1)}%</div>
                   </div>
                 ))}
               </div>
