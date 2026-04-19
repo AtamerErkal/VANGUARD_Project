@@ -76,7 +76,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Map — 60% */}
         <div className="p-3" style={{ width: '60%', minWidth: 0 }}>
-          <TacticalMap tracks={tracks} selectedId={selectedId} onSelect={setSelectedId} />
+          <TacticalMap tracks={tracks} selectedId={selectedId} approvals={approvals} onSelect={setSelectedId} />
         </div>
 
         {/* Side panel — 40% */}
