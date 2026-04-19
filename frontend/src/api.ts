@@ -1,4 +1,4 @@
-import type { Track, PredictRequest, PredictResponse } from './types'
+import type { Track, PredictRequest, PredictResponse, ModelStats } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -19,6 +19,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  getTracks: ()                          => get<Track[]>('/api/tracks'),
-  predict:   (req: PredictRequest)       => post<PredictResponse>('/api/predict', req),
+  getTracks:     ()                    => get<Track[]>('/api/tracks'),
+  getModelStats: ()                    => get<ModelStats>('/api/model-stats'),
+  predict:       (req: PredictRequest) => post<PredictResponse>('/api/predict', req),
 }

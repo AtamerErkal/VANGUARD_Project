@@ -57,6 +57,24 @@ export interface Track {
   hist_timestamps:      string[]
 }
 
+export interface PerClassMetric {
+  f1:        number
+  precision: number
+  recall:    number
+  support:   number
+}
+
+export interface ModelStats {
+  accuracy:         number
+  f1_macro:         number
+  f1_weighted:      number
+  test_size:        number
+  train_size:       number
+  classes:          string[]
+  per_class:        Record<string, PerClassMetric>
+  confusion_matrix: number[][]
+}
+
 export interface PredictRequest {
   altitude_ft:          number
   speed_kts:            number

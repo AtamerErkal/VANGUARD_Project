@@ -35,6 +35,12 @@ export default function App() {
   const pendingCount  = tracks.filter(t => !approvals[t.track_id]).length
   const approvedCount = Object.values(approvals).filter(a => a.action === 'approved').length
 
+  const threatScore = Math.min(100, tracks.reduce((s, t) => {
+    if (t.ai_class === 'HOSTILE')  return s + 15
+    if (t.ai_class === 'SUSPECT')  return s + 6
+    return s
+  }, 0))
+
   const handleDecide = (id: string, state: ApprovalState) =>
     setApprovals(prev => ({ ...prev, [id]: state }))
 
@@ -71,7 +77,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#060a10' }}>
-      <Header pendingCount={pendingCount} approvedCount={approvedCount} selected={selected} />
+      <Header pendingCount={pendingCount} approvedCount={approvedCount} selected={selected} threatScore={threatScore} />
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* Map */}

@@ -14,6 +14,8 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import sys
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
+from sklearn.model_selection import train_test_split
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 sys.path.append(str(Path(__file__).parent.parent))
@@ -355,6 +357,63 @@ def get_tracks():
     return _tracks_cache
 
 
+# ── Model statistics (computed once, cached) ──────────────────────────────────
+
+_DATA_PATH        = Path(__file__).parent.parent / "data" / "vanguard_air_tracks_fused.csv"
+_model_stats_cache = None
+
+def compute_model_stats() -> dict:
+    global _model_stats_cache
+    if _model_stats_cache is not None:
+        return _model_stats_cache
+
+    df  = pd.read_csv(_DATA_PATH)
+    cat = ["electronic_signature", "flight_profile", "weather", "thermal_signature"]
+    X_raw = pd.get_dummies(df.drop(columns=["classification"]), columns=cat)
+    for col in _feature_cols:
+        if col not in X_raw.columns:
+            X_raw[col] = 0
+    X_raw = X_raw[_feature_cols]
+    y = df["classification"].values
+
+    _, X_test, _, y_test = train_test_split(
+        X_raw, y, test_size=0.20, random_state=42, stratify=y
+    )
+    X_scaled = _scaler.transform(X_test.values.astype(float))
+
+    with torch.no_grad():
+        out   = _model(torch.FloatTensor(X_scaled))
+        preds = torch.argmax(torch.softmax(out, dim=1), dim=1).numpy()
+
+    y_pred  = _label_encoder.inverse_transform(preds)
+    classes = list(_label_encoder.classes_)
+
+    f1_per  = f1_score(y_test, y_pred, labels=classes, average=None, zero_division=0)
+    pre_per = precision_score(y_test, y_pred, labels=classes, average=None, zero_division=0)
+    rec_per = recall_score(y_test, y_pred, labels=classes, average=None, zero_division=0)
+    cm      = confusion_matrix(y_test, y_pred, labels=classes)
+
+    _model_stats_cache = {
+        "accuracy":         round(float(accuracy_score(y_test, y_pred)), 4),
+        "f1_macro":         round(float(f1_score(y_test, y_pred, average="macro", zero_division=0)), 4),
+        "f1_weighted":      round(float(f1_score(y_test, y_pred, average="weighted", zero_division=0)), 4),
+        "test_size":        int(len(y_test)),
+        "train_size":       int(len(df) - len(y_test)),
+        "classes":          classes,
+        "per_class":        {
+            cls: {
+                "f1":        round(float(f1_per[i]),  4),
+                "precision": round(float(pre_per[i]), 4),
+                "recall":    round(float(rec_per[i]), 4),
+                "support":   int(np.sum(y_test == cls)),
+            }
+            for i, cls in enumerate(classes)
+        },
+        "confusion_matrix": cm.tolist(),
+    }
+    return _model_stats_cache
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -380,6 +439,13 @@ class PredictRequest(BaseModel):
     flight_profile:       str
     weather:              str
     thermal_signature:    str
+
+
+@app.get("/api/model-stats")
+def model_stats_endpoint():
+    if not _model_ready:
+        raise HTTPException(503, "Model not loaded")
+    return compute_model_stats()
 
 
 @app.post("/api/predict")
