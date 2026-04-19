@@ -20,6 +20,7 @@ export default function App() {
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState<string | null>(null)
   const [activeTab,  setActiveTab]  = useState<PanelTab>('fusion')
+  const [panelOpen,  setPanelOpen]  = useState(true)
 
   useEffect(() => {
     api.getTracks()
@@ -28,7 +29,6 @@ export default function App() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Reset tab on track change
   useEffect(() => { setActiveTab('fusion') }, [selectedId])
 
   const selected      = tracks.find(t => t.track_id === selectedId) ?? null
@@ -71,16 +71,44 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#060a10' }}>
-      <Header pendingCount={pendingCount} approvedCount={approvedCount} />
+      <Header pendingCount={pendingCount} approvedCount={approvedCount} selected={selected} />
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Map — 60% */}
-        <div className="p-3" style={{ width: '60%', minWidth: 0 }}>
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Map */}
+        <div className="p-3 transition-all duration-300"
+             style={{ width: panelOpen ? '60%' : '100%', minWidth: 0 }}>
           <TacticalMap tracks={tracks} selectedId={selectedId} approvals={approvals} onSelect={setSelectedId} />
         </div>
 
-        {/* Side panel — 40% */}
-        {selected && (() => {
+        {/* Panel toggle button */}
+        <button
+          onClick={() => setPanelOpen(o => !o)}
+          title={panelOpen ? 'Collapse panel' : 'Expand panel'}
+          style={{
+            position:   'absolute',
+            top:        '50%',
+            right:      panelOpen ? 'calc(40% - 14px)' : '0px',
+            transform:  'translateY(-50%)',
+            zIndex:     20,
+            width:      28,
+            height:     52,
+            background: 'rgba(14,22,40,0.95)',
+            border:     '1px solid rgba(56,189,248,0.2)',
+            borderRadius: panelOpen ? '8px 0 0 8px' : '8px 0 0 8px',
+            cursor:     'pointer',
+            display:    'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color:      '#38bdf8',
+            fontSize:   13,
+            transition: 'right 0.3s',
+          }}
+        >
+          {panelOpen ? '›' : '‹'}
+        </button>
+
+        {/* Side panel */}
+        {panelOpen && selected && (() => {
           const approval  = approvals[selected.track_id]
           const dispCls   = approval?.action === 'override' ? (approval.override_class ?? selected.ai_class) : selected.ai_class
           const dispStyle = CLASS_STYLES[dispCls] ?? CLASS_STYLES['NEUTRAL']
@@ -91,39 +119,39 @@ export default function App() {
               style={{ width: '40%', borderLeft: '1px solid rgba(56,189,248,0.1)', background: 'rgba(6,10,16,0.92)' }}
             >
               {/* Classification badge */}
-              <div className="px-3 pt-3 pb-2 flex-shrink-0">
+              <div className="px-4 pt-4 pb-3 flex-shrink-0">
                 <div
-                  className="rounded-xl px-4 py-3 result-reveal"
+                  className="rounded-xl px-5 py-4 result-reveal"
                   style={{
                     background: `linear-gradient(135deg,${dispStyle.bg} 0%,rgba(0,0,0,0.45) 100%)`,
-                    border:     `1px solid ${dispStyle.color}44`,
-                    boxShadow:  `0 0 30px ${dispStyle.color}14`,
+                    border:     `1px solid ${dispStyle.color}55`,
+                    boxShadow:  `0 0 40px ${dispStyle.color}18`,
                   }}
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs tracking-widest mb-0.5"
-                         style={{ color: '#475569', fontFamily: 'Orbitron, monospace', fontSize: 9 }}>
+                      <p style={{ color: '#94a3b8', fontFamily: 'Orbitron, monospace', fontSize: 10, letterSpacing: 3, marginBottom: 6 }}>
                         AI CLASSIFICATION
                       </p>
-                      <p className="font-black text-lg tracking-widest"
-                         style={{ color: dispStyle.color, fontFamily: 'Orbitron, monospace', letterSpacing: 4 }}>
+                      <p style={{ color: dispStyle.color, fontFamily: 'Orbitron, monospace', fontSize: 22, fontWeight: 900, letterSpacing: 4, lineHeight: 1.1 }}>
                         {dispStyle.icon} {dispCls}
                       </p>
-                      <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
-                        {(selected.ai_conf * 100).toFixed(1)}% confidence &nbsp;·&nbsp; {selected.track_id}
+                      <p style={{ color: '#cbd5e1', fontSize: 13, marginTop: 6, fontWeight: 500 }}>
+                        <span style={{ color: dispStyle.color, fontWeight: 700 }}>{(selected.ai_conf * 100).toFixed(1)}%</span>
+                        {' '}confidence &nbsp;·&nbsp;
+                        <span style={{ color: '#94a3b8' }}>{selected.track_id}</span>
                       </p>
                     </div>
-                    <div className="text-right text-xs space-y-0.5" style={{ color: '#94a3b8', lineHeight: 1.9 }}>
-                      <div>{selected.electronic_signature}</div>
-                      <div>{selected.flight_profile}</div>
-                      <div>{selected.altitude_ft.toLocaleString()} ft</div>
-                      <div>{selected.speed_kts.toFixed(0)} kts · {selected.rcs_m2.toFixed(1)} m²</div>
-                      <div>{selected.weather} · {selected.thermal_signature}</div>
+                    <div className="text-right space-y-1 flex-shrink-0" style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.8 }}>
+                      <div style={{ color: '#94a3b8' }}>{selected.electronic_signature}</div>
+                      <div style={{ color: '#94a3b8' }}>{selected.flight_profile}</div>
+                      <div><span style={{ color: '#64748b', fontSize: 11 }}>Alt </span>{selected.altitude_ft.toLocaleString()} ft</div>
+                      <div><span style={{ color: '#64748b', fontSize: 11 }}>Spd </span>{selected.speed_kts.toFixed(0)} kts &nbsp;<span style={{ color: '#64748b', fontSize: 11 }}>RCS </span>{selected.rcs_m2.toFixed(1)} m²</div>
+                      <div style={{ color: '#94a3b8' }}>{selected.weather} · {selected.thermal_signature}</div>
                     </div>
                   </div>
                   {approval && (
-                    <p className="text-xs mt-2" style={{ color: approval.action === 'approved' ? '#4ade80' : '#fbbf24' }}>
+                    <p style={{ color: approval.action === 'approved' ? '#4ade80' : '#fbbf24', fontSize: 12, marginTop: 8, fontWeight: 600 }}>
                       {approval.action === 'approved' ? '✓ Expert approved' : `↺ Overridden → ${approval.override_class}`}
                     </p>
                   )}
@@ -132,13 +160,13 @@ export default function App() {
 
               {/* Anomalies */}
               {selected.anomalies.length > 0 && (
-                <div className="px-3 pb-2 flex-shrink-0">
+                <div className="px-4 pb-2 flex-shrink-0">
                   <AnomalyAlerts anomalies={selected.anomalies} />
                 </div>
               )}
 
               {/* Tab bar */}
-              <div className="px-3 pb-2 flex-shrink-0">
+              <div className="px-4 pb-2 flex-shrink-0">
                 <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(12,18,30,0.8)', border: '1px solid rgba(56,189,248,0.1)' }}>
                   {TABS.map(tab => (
                     <button
@@ -146,11 +174,12 @@ export default function App() {
                       onClick={() => setActiveTab(tab.id)}
                       className="flex-1 py-1.5 rounded-lg text-xs transition-all"
                       style={{
-                        background:  activeTab === tab.id ? 'rgba(56,189,248,0.18)' : 'transparent',
-                        color:       activeTab === tab.id ? '#38bdf8' : '#475569',
-                        fontFamily:  'Space Grotesk, sans-serif',
-                        fontWeight:  activeTab === tab.id ? 600 : 400,
-                        border:      activeTab === tab.id ? '1px solid rgba(56,189,248,0.3)' : '1px solid transparent',
+                        background: activeTab === tab.id ? 'rgba(56,189,248,0.18)' : 'transparent',
+                        color:      activeTab === tab.id ? '#38bdf8' : '#64748b',
+                        fontFamily: 'Space Grotesk, sans-serif',
+                        fontWeight: activeTab === tab.id ? 700 : 400,
+                        fontSize:   13,
+                        border:     activeTab === tab.id ? '1px solid rgba(56,189,248,0.3)' : '1px solid transparent',
                       }}
                     >
                       {tab.icon} {tab.label}
@@ -160,16 +189,13 @@ export default function App() {
               </div>
 
               {/* Tab content */}
-              <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 min-h-0">
+              <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 min-h-0">
                 {activeTab === 'fusion' && <SensorFusion track={selected} />}
-
                 {activeTab === 'xai' && selected.xai && (
                   <XAIPanel xai={selected.xai} aiClass={selected.ai_class} />
                 )}
-
                 {activeTab === 'trail' && <Trail3D track={selected} />}
 
-                {/* Expert approval + What-If always visible below tab content */}
                 <ExpertApproval
                   track={selected}
                   approval={approvals[selected.track_id] ?? null}
