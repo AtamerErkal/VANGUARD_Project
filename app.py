@@ -116,7 +116,7 @@ def compute_fusion(sensor_votes, sensor_enabled, base_weights, jamming_active=Fa
         weights["radar"] += base_weights["esm"] * 0.5
         weights["iff"]   += base_weights["esm"] * 0.25
 
-    active = {s: votes[s] for s in SENSOR_ORDER if sensor_enabled.get(s, True)}
+    active = {s: votes[s] for s in SENSOR_ORDER if sensor_enabled.get(s, True) and s in votes}
     active_w = {s: weights[s] for s in active}
     total_w = sum(active_w.values()) or 1
     norm_w = {s: w / total_w for s, w in active_w.items()}
@@ -166,6 +166,156 @@ def sensor_card_html(vd, weight, degraded=False):
         </div>
         {degraded_tag}
     </div>"""
+
+
+# ==================== TOC HELPERS ====================
+
+def track_sensor_votes(track):
+    sig     = track['electronic_signature']
+    thermal = track['thermal_signature']
+    weather = track['weather']
+    rcs     = track['rcs_m2']
+    alt     = track['altitude_ft']
+    spd     = track['speed_kts']
+
+    if rcs < 3 and spd > 500:
+        radar_vote, radar_conf = "HOSTILE",  0.73
+    elif rcs > 10 and spd < 500:
+        radar_vote, radar_conf = "CIVILIAN", 0.81
+    elif 4 <= rcs <= 10:
+        radar_vote, radar_conf = "FRIEND",   0.66
+    else:
+        radar_vote, radar_conf = "SUSPECT",  0.51
+
+    esm_map = {
+        'IFF_MODE_5':       ("FRIEND",   0.95),
+        'IFF_MODE_3C':      ("CIVILIAN", 0.92),
+        'HOSTILE_JAMMING':  ("HOSTILE",  0.90),
+        'NO_IFF_RESPONSE':  ("HOSTILE",  0.76),
+        'UNKNOWN_EMISSION': ("SUSPECT",  0.45),
+    }
+    esm_vote, esm_conf = esm_map.get(sig, ("NEUTRAL", 0.40))
+
+    thermal_map = {
+        'High':         ("HOSTILE",  0.78),
+        'Medium':       ("SUSPECT",  0.55),
+        'Low':          ("CIVILIAN", 0.70),
+        'Not_Detected': ("NEUTRAL",  0.40),
+    }
+    irst_vote, irst_conf = thermal_map.get(thermal, ("NEUTRAL", 0.40))
+    if weather != 'Clear':
+        irst_conf = round(irst_conf * 0.55, 2)
+
+    iff_map = {
+        'IFF_MODE_5':       ("FRIEND",   0.98),
+        'IFF_MODE_3C':      ("CIVILIAN", 0.96),
+        'HOSTILE_JAMMING':  ("HOSTILE",  0.88),
+        'NO_IFF_RESPONSE':  ("HOSTILE",  0.92),
+        'UNKNOWN_EMISSION': ("NEUTRAL",  0.50),
+    }
+    iff_vote, iff_conf = iff_map.get(sig, ("NEUTRAL", 0.40))
+
+    return {
+        "radar": {"label": "Active Radar", "icon": "📡", "vote": radar_vote, "conf": radar_conf,
+                  "reading": f"Alt {alt:,.0f} ft · {spd:.0f} kts · RCS {rcs:.1f} m²"},
+        "esm":   {"label": "ESM Suite",    "icon": "📻", "vote": esm_vote,   "conf": esm_conf,
+                  "reading": f"{sig}"},
+        "irst":  {"label": "IRST Camera",  "icon": "🔥", "vote": irst_vote,  "conf": irst_conf,
+                  "reading": f"Thermal: {thermal}" + (" · degraded (weather)" if weather != 'Clear' else "")},
+        "iff":   {"label": "IFF System",   "icon": "🆔", "vote": iff_vote,   "conf": iff_conf,
+                  "reading": sig + (" · Level-2 encrypted" if sig == 'IFF_MODE_5' else "")},
+    }
+
+
+def detect_anomalies(track):
+    sig     = track['electronic_signature']
+    profile = track['flight_profile']
+    rcs     = track['rcs_m2']
+    alt     = track['altitude_ft']
+    spd     = track['speed_kts']
+    thermal = track['thermal_signature']
+    anomalies = []
+
+    if sig in ('IFF_MODE_3C', 'IFF_MODE_5') and profile == 'AGGRESSIVE_MANEUVERS':
+        anomalies.append(("IFF–Maneuver Conflict",
+                          f"{sig} active but profile is AGGRESSIVE_MANEUVERS — possible IFF spoofing"))
+    if sig == 'IFF_MODE_3C' and rcs < 5.0:
+        anomalies.append(("RCS–IFF Mismatch",
+                          f"Civilian IFF but RCS = {rcs:.1f} m² — too small for commercial airframe"))
+    if sig == 'IFF_MODE_3C' and alt < 10000 and spd > 500:
+        anomalies.append(("Kinematic Anomaly",
+                          f"Civil squawk + alt {alt:,.0f} ft + speed {spd:.0f} kts — inconsistent with civil profile"))
+    if profile == 'LOW_ALTITUDE_FLYING' and alt < 1000:
+        anomalies.append(("Terrain Hugging",
+                          f"Alt {alt:,.0f} ft — possible NOE / terrain-masking flight"))
+    if sig == 'NO_IFF_RESPONSE' and spd > 600:
+        anomalies.append(("High-Speed Non-Cooperative",
+                          f"No IFF + {spd:.0f} kts — intercept criteria met"))
+    if sig == 'HOSTILE_JAMMING' and thermal == 'Low':
+        anomalies.append(("Signature Conflict",
+                          "Jamming detected but low thermal — possible stealth platform or sensor malfunction"))
+    return anomalies
+
+
+@st.cache_data
+def generate_toc_tracks(_model, _scaler, _label_encoder, _feature_cols):
+    np.random.seed(77)
+    configs = [
+        (45.2, 35.8, 7500,  680, 1.1, 270, 'HOSTILE_JAMMING',    'AGGRESSIVE_MANEUVERS', 'High',   'Clear'),
+        (44.8, 34.2, 1200,  720, 0.6, 315, 'NO_IFF_RESPONSE',    'LOW_ALTITUDE_FLYING',  'High',   'Clear'),
+        (51.5, 0.1,  35000, 450, 18,  90,  'IFF_MODE_3C',        'STABLE_CRUISE',        'Low',    'Clear'),
+        (50.8, 2.3,  33000, 440, 15,  85,  'IFF_MODE_3C',        'STABLE_CRUISE',        'Low',    'Cloudy'),
+        (51.2, 12.4, 25000, 410, 6.0, 45,  'IFF_MODE_5',         'STABLE_CRUISE',        'Medium', 'Clear'),
+        (52.1, 14.8, 18000, 390, 5.5, 60,  'IFF_MODE_5',         'CLIMBING',             'Medium', 'Clear'),
+        (47.1, 22.3, 14000, 430, 3.2, 195, 'UNKNOWN_EMISSION',   'CLIMBING',             'Medium', 'Cloudy'),
+        (46.5, 20.1, 9000,  510, 2.8, 220, 'NO_IFF_RESPONSE',    'AGGRESSIVE_MANEUVERS', 'Medium', 'Clear'),
+        (49.8, 8.5,  29000, 400, 12,  110, 'IFF_MODE_3C',        'STABLE_CRUISE',        'Low',    'Clear'),
+        (48.3, 26.7, 5500,  610, 1.4, 260, 'IFF_MODE_3C',        'AGGRESSIVE_MANEUVERS', 'High',   'Clear'),
+    ]
+
+    tracks = []
+    for i, (lat, lon, alt, spd, rcs, hdg, esig, fprofile, thermal, weather) in enumerate(configs):
+        lat += np.random.normal(0, 0.05)
+        lon += np.random.normal(0, 0.05)
+
+        n_hist = 9
+        ang = np.radians(hdg)
+        hist_lats = [lat - (n_hist - j) * 0.09 * np.cos(ang) + np.random.normal(0, 0.015)
+                     for j in range(n_hist)] + [lat]
+        hist_lons = [lon - (n_hist - j) * 0.09 * np.sin(ang) + np.random.normal(0, 0.015)
+                     for j in range(n_hist)] + [lon]
+        hist_alts = [max(200, alt + (j - n_hist) * np.random.uniform(80, 220))
+                     for j in range(n_hist)] + [alt]
+
+        inp = {'altitude_ft': alt, 'speed_kts': spd, 'rcs_m2': rcs,
+               'latitude': lat, 'longitude': lon, 'heading': hdg,
+               'electronic_signature': esig, 'flight_profile': fprofile,
+               'weather': weather, 'thermal_signature': thermal}
+
+        try:
+            res = predict_aircraft(inp, _model, _scaler, _label_encoder, _feature_cols)
+            ai_class = res['classification']
+            ai_conf  = res['confidence']
+            ai_probs = res['probabilities']
+        except Exception:
+            ai_class, ai_conf, ai_probs = "NEUTRAL", 0.5, {}
+
+        tracks.append({
+            'track_id': f'TRK-{i+1:03d}',
+            'latitude': lat, 'longitude': lon,
+            'altitude_ft': alt, 'speed_kts': spd, 'rcs_m2': rcs,
+            'heading': hdg, 'weather': weather,
+            'electronic_signature': esig,
+            'flight_profile': fprofile,
+            'thermal_signature': thermal,
+            'ai_class': ai_class,
+            'ai_conf':  ai_conf,
+            'ai_probs': ai_probs,
+            'hist_lats': hist_lats,
+            'hist_lons': hist_lons,
+            'hist_alts': hist_alts,
+        })
+    return tracks
 
 
 # ==================== PAGE CONFIG ====================
@@ -560,7 +710,7 @@ def main():
 
         app_mode = st.radio(
             "Select Operation Mode",
-            ["Assessment Center", "Live Fusion Sim", "Strategic Radar", "SDD Lifecycle", "Governance & Compliance"]
+            ["Assessment Center", "Live Fusion Sim", "Tactical Ops Center", "Strategic Radar", "SDD Lifecycle", "Governance & Compliance"]
         )
 
         st.markdown("---")
@@ -985,6 +1135,266 @@ def main():
                     <div style="font-size:0.9rem;letter-spacing:2px;">Select a scenario and press<br>
                     <strong style="color:#38bdf888;">▶ RUN FUSION SEQUENCE</strong> to begin</div>
                 </div>""", unsafe_allow_html=True)
+
+    # ==================== TACTICAL OPS CENTER ====================
+
+    elif app_mode == "Tactical Ops Center":
+        st.markdown("### 🗺️ TACTICAL OPERATIONS CENTER")
+        st.caption("AI-classified tracks pending expert approval — click a track to inspect sensor fusion & anomalies")
+
+        if 'toc_approved' not in st.session_state:
+            st.session_state.toc_approved = {}
+        if 'toc_selected' not in st.session_state:
+            st.session_state.toc_selected = None
+
+        tracks = generate_toc_tracks(model, scaler, label_encoder, feature_cols)
+
+        color_map = {k: v['color'] for k, v in CLASSIFICATION_STYLES.items()}
+        lats    = [t['latitude']   for t in tracks]
+        lons    = [t['longitude']  for t in tracks]
+        tids    = [t['track_id']   for t in tracks]
+        classes = [t['ai_class']   for t in tracks]
+        confs   = [t['ai_conf']    for t in tracks]
+        colors  = [color_map.get(c, '#94a3b8') for c in classes]
+        sizes   = [18 if c in ('HOSTILE', 'SUSPECT') else 13 for c in classes]
+
+        approved_ids = set(st.session_state.toc_approved.keys())
+        status_labels = []
+        for t in tracks:
+            st_info = st.session_state.toc_approved.get(t['track_id'], {})
+            if st_info.get('action') == 'approved':
+                status_labels.append(f"{t['track_id']} ✓ APPROVED")
+            elif st_info.get('action') == 'override':
+                status_labels.append(f"{t['track_id']} ↺ {st_info.get('override_class', '')}")
+            else:
+                status_labels.append(f"{t['track_id']} ⏳ PENDING")
+
+        hover_texts = [
+            f"<b>{tids[i]}</b><br>AI: {classes[i]} ({confs[i]:.0%})<br>{status_labels[i]}<br>"
+            f"Alt {tracks[i]['altitude_ft']:,.0f} ft · {tracks[i]['speed_kts']:.0f} kts"
+            for i in range(len(tracks))
+        ]
+
+        fig_map = go.Figure(go.Scattermapbox(
+            lat=lats, lon=lons,
+            mode='markers',
+            marker=dict(size=sizes, color=colors, opacity=0.92,
+                        allowoverlap=True),
+            text=status_labels,
+            customdata=tids,
+            hovertemplate="%{hovertext}<extra></extra>",
+            hovertext=hover_texts,
+        ))
+        fig_map.update_layout(
+            mapbox=dict(style="carto-darkmatter", center=dict(lat=49, lon=15), zoom=3.8),
+            margin=dict(r=0, t=0, l=0, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            height=420,
+        )
+
+        map_event = st.plotly_chart(
+            fig_map, use_container_width=True,
+            on_select="rerun", key="toc_map_chart"
+        )
+        if map_event and map_event.selection and map_event.selection.points:
+            cd = map_event.selection.points[0].get("customdata")
+            if cd:
+                st.session_state.toc_selected = cd if isinstance(cd, str) else cd[0]
+
+        track_ids_list = [t['track_id'] for t in tracks]
+        sel_idx_default = track_ids_list.index(st.session_state.toc_selected) if st.session_state.toc_selected in track_ids_list else 0
+        sel_id = st.selectbox("Selected Track", track_ids_list, index=sel_idx_default,
+                              key="toc_selectbox", label_visibility="collapsed")
+        if sel_id != st.session_state.toc_selected:
+            st.session_state.toc_selected = sel_id
+
+        sel_track = next((t for t in tracks if t['track_id'] == st.session_state.toc_selected), tracks[0])
+
+        st.markdown("---")
+        col_left, col_right = st.columns([1.1, 1])
+
+        with col_left:
+            ai_style = CLASSIFICATION_STYLES.get(sel_track['ai_class'], CLASSIFICATION_STYLES['NEUTRAL'])
+            approval_state = st.session_state.toc_approved.get(sel_track['track_id'], {})
+            approved_action = approval_state.get('action')
+            display_class = approval_state.get('override_class', sel_track['ai_class']) if approved_action == 'override' else sel_track['ai_class']
+            disp_style = CLASSIFICATION_STYLES.get(display_class, CLASSIFICATION_STYLES['NEUTRAL'])
+
+            st.markdown(f"""
+            <div style="background:rgba(12,18,30,0.85);border:1px solid {disp_style['color']}44;
+                        border-left:3px solid {disp_style['color']};border-radius:12px;
+                        padding:1rem 1.2rem;margin-bottom:1rem;font-family:'Space Grotesk',sans-serif;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                        <div style="font-family:'Orbitron',monospace;font-size:0.7rem;
+                                    letter-spacing:3px;color:#475569;margin-bottom:0.3rem;">AI CLASSIFICATION</div>
+                        <div style="font-size:1.5rem;font-weight:900;color:{disp_style['color']};
+                                    font-family:'Orbitron',monospace;letter-spacing:3px;">
+                            {disp_style['icon']} {display_class}
+                        </div>
+                        <div style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">
+                            Confidence: {sel_track['ai_conf']:.1%} &nbsp;·&nbsp; {sel_track['track_id']}
+                        </div>
+                    </div>
+                    <div style="text-align:right;font-size:0.72rem;color:#475569;line-height:1.7;">
+                        <div>{sel_track['electronic_signature']}</div>
+                        <div>{sel_track['flight_profile']}</div>
+                        <div>Alt {sel_track['altitude_ft']:,.0f} ft</div>
+                        <div>{sel_track['speed_kts']:.0f} kts · RCS {sel_track['rcs_m2']:.1f} m²</div>
+                    </div>
+                </div>
+                {"<div style='margin-top:0.6rem;font-size:0.72rem;color:#22c55e;'>✓ Expert Approved</div>" if approved_action == 'approved' else ""}
+                {"<div style='margin-top:0.6rem;font-size:0.72rem;color:#f59e0b;'>↺ Overridden to: " + display_class + "</div>" if approved_action == 'override' else ""}
+            </div>
+            """, unsafe_allow_html=True)
+
+            anomalies = detect_anomalies(sel_track)
+            if anomalies:
+                st.markdown("**⚠ Anomaly Detection**")
+                for title, desc in anomalies:
+                    st.markdown(f"""
+                    <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);
+                                border-left:3px solid #f59e0b;border-radius:8px;padding:0.6rem 0.8rem;
+                                margin-bottom:0.4rem;font-family:'Space Grotesk',sans-serif;">
+                        <div style="font-size:0.78rem;font-weight:600;color:#f59e0b;">⚠ {title}</div>
+                        <div style="font-size:0.72rem;color:#92400e;margin-top:0.2rem;">{desc}</div>
+                    </div>""", unsafe_allow_html=True)
+
+            st.markdown("**📡 Sensor Fusion Breakdown**")
+            sv = track_sensor_votes(sel_track)
+            best_fused, fused_probs, norm_w = compute_fusion(
+                sv, {s: True for s in SENSOR_ORDER}, SENSOR_BASE_WEIGHTS
+            )
+            for s in SENSOR_ORDER:
+                st.markdown(sensor_card_html(sv[s], norm_w[s]), unsafe_allow_html=True)
+
+            st.markdown("**Expert Decision**")
+            ec1, ec2, ec3 = st.columns(3)
+            with ec1:
+                if st.button("✅ Approve", key=f"approve_{sel_track['track_id']}", use_container_width=True):
+                    st.session_state.toc_approved[sel_track['track_id']] = {'action': 'approved'}
+                    st.rerun()
+            with ec2:
+                override_cls = st.selectbox("", list(CLASSIFICATION_STYLES.keys()),
+                                            key=f"ovr_cls_{sel_track['track_id']}",
+                                            label_visibility="collapsed")
+            with ec3:
+                if st.button("↺ Override", key=f"override_{sel_track['track_id']}", use_container_width=True):
+                    st.session_state.toc_approved[sel_track['track_id']] = {
+                        'action': 'override', 'override_class': override_cls
+                    }
+                    st.rerun()
+
+        with col_right:
+            st.markdown("**🧭 3D Flight Trail**")
+            hist_lats = sel_track['hist_lats']
+            hist_lons = sel_track['hist_lons']
+            hist_alts = [a / 1000 for a in sel_track['hist_alts']]
+
+            fig_3d = go.Figure()
+            fig_3d.add_trace(go.Scatter3d(
+                x=hist_lons[:-1], y=hist_lats[:-1], z=hist_alts[:-1],
+                mode='lines+markers',
+                line=dict(color='#38bdf8', width=3),
+                marker=dict(size=3, color='#38bdf8', opacity=0.6),
+                name='History',
+                hovertemplate='Lon: %{x:.3f}<br>Lat: %{y:.3f}<br>Alt: %{z:.1f}k ft<extra></extra>',
+            ))
+            fig_3d.add_trace(go.Scatter3d(
+                x=[hist_lons[-1]], y=[hist_lats[-1]], z=[hist_alts[-1]],
+                mode='markers+text',
+                marker=dict(size=10, color=ai_style['color'],
+                            symbol='circle', opacity=1.0,
+                            line=dict(color='white', width=1)),
+                text=[sel_track['track_id']],
+                textposition='top center',
+                textfont=dict(color='white', size=10),
+                name='Current',
+                hovertemplate=f"{sel_track['track_id']}<br>Alt: %{{z:.1f}}k ft<extra></extra>",
+            ))
+            fig_3d.update_layout(
+                height=360,
+                paper_bgcolor='rgba(0,0,0,0)',
+                scene=dict(
+                    bgcolor='rgba(6,10,16,0.95)',
+                    xaxis=dict(title='Longitude', color='#475569', gridcolor='#1e293b', showbackground=False),
+                    yaxis=dict(title='Latitude',  color='#475569', gridcolor='#1e293b', showbackground=False),
+                    zaxis=dict(title='Alt (kft)', color='#475569', gridcolor='#1e293b', showbackground=False),
+                ),
+                margin=dict(t=0, b=0, l=0, r=0),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_3d, use_container_width=True)
+
+            pending = sum(1 for t in tracks if t['track_id'] not in st.session_state.toc_approved)
+            approved_cnt = sum(1 for v in st.session_state.toc_approved.values() if v.get('action') == 'approved')
+            override_cnt = sum(1 for v in st.session_state.toc_approved.values() if v.get('action') == 'override')
+            st.markdown(f"""
+            <div style="background:rgba(12,18,30,0.8);border:1px solid rgba(56,189,248,0.12);
+                        border-radius:10px;padding:0.8rem 1rem;font-family:'Space Grotesk',sans-serif;
+                        font-size:0.8rem;margin-top:0.5rem;">
+                <div style="font-family:'Orbitron',monospace;font-size:0.65rem;letter-spacing:3px;
+                            color:#38bdf855;margin-bottom:0.5rem;">QUEUE STATUS</div>
+                <div style="display:flex;gap:1.5rem;">
+                    <div><span style="color:#f59e0b;font-weight:700;">{pending}</span> <span style="color:#475569;">pending</span></div>
+                    <div><span style="color:#22c55e;font-weight:700;">{approved_cnt}</span> <span style="color:#475569;">approved</span></div>
+                    <div><span style="color:#f59e0b;font-weight:700;">{override_cnt}</span> <span style="color:#475569;">overridden</span></div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+        with st.expander("🔬 What-If Analysis — Re-classify with Modified Parameters"):
+            st.caption("Adjust parameters below to see how the model would reclassify this track")
+            wc1, wc2, wc3 = st.columns(3)
+            with wc1:
+                wi_alt  = st.slider("Altitude (ft)",  0,      60000, int(sel_track['altitude_ft']), 500,  key="wi_alt")
+                wi_spd  = st.slider("Speed (kts)",    0,      1000,  int(sel_track['speed_kts']),   10,   key="wi_spd")
+            with wc2:
+                wi_rcs  = st.slider("RCS (m²)",       0.1,    100.0, float(sel_track['rcs_m2']),    0.5,  key="wi_rcs")
+                wi_hdg  = st.slider("Heading (°)",    0,      360,   int(sel_track['heading']),      5,    key="wi_hdg")
+            with wc3:
+                wi_esig = st.selectbox("Electronic Signature",
+                                       ['IFF_MODE_5','IFF_MODE_3C','NO_IFF_RESPONSE','HOSTILE_JAMMING','UNKNOWN_EMISSION'],
+                                       index=['IFF_MODE_5','IFF_MODE_3C','NO_IFF_RESPONSE','HOSTILE_JAMMING','UNKNOWN_EMISSION'].index(sel_track['electronic_signature']),
+                                       key="wi_esig")
+                wi_fp   = st.selectbox("Flight Profile",
+                                       ['STABLE_CRUISE','AGGRESSIVE_MANEUVERS','LOW_ALTITUDE_FLYING','CLIMBING'],
+                                       index=['STABLE_CRUISE','AGGRESSIVE_MANEUVERS','LOW_ALTITUDE_FLYING','CLIMBING'].index(sel_track['flight_profile']),
+                                       key="wi_fp")
+
+            if st.button("🔄 Re-Classify", type="primary", key="wi_classify"):
+                wi_input = {**{k: sel_track[k] for k in ('latitude','longitude','weather','thermal_signature')},
+                            'altitude_ft': wi_alt, 'speed_kts': wi_spd, 'rcs_m2': wi_rcs,
+                            'heading': wi_hdg, 'electronic_signature': wi_esig, 'flight_profile': wi_fp}
+                wi_result = predict_aircraft(wi_input, model, scaler, label_encoder, feature_cols)
+                wi_style  = CLASSIFICATION_STYLES.get(wi_result['classification'], CLASSIFICATION_STYLES['NEUTRAL'])
+                orig_style = CLASSIFICATION_STYLES.get(sel_track['ai_class'], CLASSIFICATION_STYLES['NEUTRAL'])
+
+                wra, wrb = st.columns(2)
+                with wra:
+                    st.markdown(f"""<div style="text-align:center;padding:1rem;
+                        background:rgba(12,18,30,0.8);border:1px solid {orig_style['color']}44;
+                        border-radius:10px;font-family:'Orbitron',monospace;">
+                        <div style="font-size:0.6rem;letter-spacing:3px;color:#475569;margin-bottom:0.3rem;">ORIGINAL</div>
+                        <div style="color:{orig_style['color']};font-weight:700;letter-spacing:2px;">
+                            {orig_style['icon']} {sel_track['ai_class']}</div>
+                        <div style="font-size:0.7rem;color:#475569;margin-top:0.2rem;">{sel_track['ai_conf']:.1%}</div>
+                    </div>""", unsafe_allow_html=True)
+                with wrb:
+                    changed = wi_result['classification'] != sel_track['ai_class']
+                    border_c = wi_style['color'] if changed else '#334155'
+                    badge = " ← CHANGED" if changed else ""
+                    st.markdown(f"""<div style="text-align:center;padding:1rem;
+                        background:rgba(12,18,30,0.8);border:1px solid {border_c}88;
+                        border-radius:10px;font-family:'Orbitron',monospace;
+                        {'box-shadow:0 0 20px ' + wi_style['color'] + '33;' if changed else ''}">
+                        <div style="font-size:0.6rem;letter-spacing:3px;color:#475569;margin-bottom:0.3rem;">MODIFIED{badge}</div>
+                        <div style="color:{wi_style['color']};font-weight:700;letter-spacing:2px;">
+                            {wi_style['icon']} {wi_result['classification']}</div>
+                        <div style="font-size:0.7rem;color:#475569;margin-top:0.2rem;">{wi_result['confidence']:.1%}</div>
+                    </div>""", unsafe_allow_html=True)
+
+                if changed:
+                    st.info(f"Classification changed: **{sel_track['ai_class']}** → **{wi_result['classification']}**")
 
     # ==================== STRATEGIC RADAR ====================
 
