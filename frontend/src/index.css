@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #060a10;
+  color: #c9d1d9;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+/* MapLibre reset */
+.maplibregl-canvas { outline: none; }
+.maplibregl-ctrl-attrib { font-size: 10px !important; }
+
+/* Sensor card stagger */
+.sensor-card { opacity: 0; }
+.sensor-card:nth-child(1) { animation: slide-in 0.35s ease-out 0.05s forwards; }
+.sensor-card:nth-child(2) { animation: slide-in 0.35s ease-out 0.20s forwards; }
+.sensor-card:nth-child(3) { animation: slide-in 0.35s ease-out 0.35s forwards; }
+.sensor-card:nth-child(4) { animation: slide-in 0.35s ease-out 0.50s forwards; }
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%     { opacity: 0.35; transform: scale(1.5); }
+}
+
+@keyframes scan {
+  0%,100% { opacity: 0.3; transform: scaleX(0.4); }
+  50%     { opacity: 1;   transform: scaleX(1); }
+}
+
+@keyframes result-reveal {
+  from { opacity: 0; transform: scale(0.93) translateY(-6px); filter: blur(3px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    filter: blur(0); }
+}
+
+.result-reveal { animation: result-reveal 0.45s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+/* Scrollbar */
+::-webkit-scrollbar       { width: 5px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
