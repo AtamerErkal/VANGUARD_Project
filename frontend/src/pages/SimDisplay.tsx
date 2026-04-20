@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import * as THREE from 'three'
-import Plot from 'react-plotly.js'
 import type { SimTrack } from '../sim-types'
+import type { Track } from '../types'
 import { CLASS_STYLES } from '../types'
+import Trail3D from '../components/Trail3D'
+import AnomalyAlerts from '../components/AnomalyAlerts'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -597,231 +599,55 @@ function TacticalMap3D({ tracks, tick, onInspect }: {
   )
 }
 
-// ── Sim trail: deterministic synthetic trajectory from track properties ───────
-function seededRand(seed: number) {
-  let s = (seed * 9301 + 49297) % 233280
-  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
-}
+// ── Sim trail adapter ─────────────────────────────────────────────────────────
+// Converts SimTrack → minimal Track shape that Trail3D needs.
+// If backend provided hist_* arrays, use them directly.
+// Demo tracks fall back to a deterministic synthetic profile.
+function simToTrailTrack(t: SimTrack): Track {
+  let alts      = t.hist_alts
+  let spds      = t.hist_speeds
+  let hdgs      = t.hist_headings
+  let times     = t.hist_timestamps
 
-function strSeed(str: string) {
-  return str.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-}
+  if (!alts || alts.length === 0) {
+    // Synthetic fallback (demo tracks)
+    const N   = 14
+    const seed = t.track_id.split('').reduce((a,c) => a + c.charCodeAt(0), 0)
+    let s = (seed * 9301 + 49297) % 233280
+    const rng = () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
 
-function generateSimTrail(track: SimTrack) {
-  const N   = 14           // 14 waypoints, 5 min apart = 65 min history
-  const rng = seededRand(strSeed(track.track_id))
+    const PARAMS: Record<string, [number, number, number, number]> = {
+      LOW_ALTITUDE_FLYING:  [-20000, 110, 10, 400],
+      AGGRESSIVE_MANEUVERS: [  4000,  85, 32, 1600],
+      CLIMBING:             [-12000,  40,  4, 300],
+      STABLE_CRUISE:        [   600,  15,  3, 200],
+    }
+    const [altT, spdT, hdgJ, altN] = PARAMS[t.flight_profile] ?? PARAMS.STABLE_CRUISE
 
-  // Profile → how the track evolved over the last 65 min
-  const profiles: Record<string, { altTrend: number; spdTrend: number; hdgJitter: number; altNoise: number }> = {
-    LOW_ALTITUDE_FLYING:   { altTrend: -22000, spdTrend: 120,  hdgJitter: 10, altNoise: 400  },
-    AGGRESSIVE_MANEUVERS:  { altTrend:   4000, spdTrend:  80,  hdgJitter: 30, altNoise: 1500 },
-    CLIMBING:              { altTrend: -12000, spdTrend:  40,  hdgJitter:  4, altNoise: 300  },
-    DIVING:                { altTrend:  15000, spdTrend:  60,  hdgJitter:  6, altNoise: 500  },
-    STABLE_CRUISE:         { altTrend:    600, spdTrend:  15,  hdgJitter:  3, altNoise: 200  },
-    HOLDING_PATTERN:       { altTrend:    200, spdTrend:  10,  hdgJitter: 40, altNoise: 150  },
-    EVASIVE_MANEUVERS:     { altTrend:   5000, spdTrend: 100,  hdgJitter: 45, altNoise: 2000 },
-    LOITERING:             { altTrend:    800, spdTrend:  20,  hdgJitter: 20, altNoise: 300  },
+    alts = []; spds = []; hdgs = []; times = []
+    let hdgAcc = t.heading
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1)
+      alts.push(Math.max(200, Math.round(t.altitude_ft + altT * (1-f) + (rng()-0.5)*altN)))
+      spds.push(Math.max(120, Math.round(t.speed_kts  + spdT * (1-f) + (rng()-0.5)*20)))
+      if (i < N-1) { hdgAcc = (hdgAcc + (rng()-0.5)*hdgJ*2) % 360 }
+      hdgs.push(Math.round(i === N-1 ? t.heading : (hdgAcc + 360) % 360))
+      const ago = (N-1-i)*5
+      times.push(ago === 0 ? 'NOW' : `T-${ago}m`)
+    }
+    alts[N-1] = t.altitude_ft; spds[N-1] = Math.round(t.speed_kts); hdgs[N-1] = t.heading
   }
 
-  const p = profiles[track.flight_profile] ?? profiles.STABLE_CRUISE
-
-  const alts:  number[] = []
-  const spds:  number[] = []
-  const hdgs:  number[] = []
-  const times: string[] = []
-
-  let hdgAcc = track.heading   // walk heading cumulatively
-
-  for (let i = 0; i < N; i++) {
-    const f = i / (N - 1)   // 0 = oldest, 1 = now
-
-    // Altitude: started at (current - altTrend), converges to current
-    const baseAlt = track.altitude_ft + p.altTrend * (1 - f)
-    const noise   = (rng() - 0.5) * p.altNoise
-    alts.push(Math.max(200, Math.round(baseAlt + noise)))
-
-    // Speed
-    const baseSpd = track.speed_kts + p.spdTrend * (1 - f)
-    spds.push(Math.max(120, Math.round(baseSpd + (rng() - 0.5) * 20)))
-
-    // Heading — random walk
-    hdgAcc += (rng() - 0.5) * p.hdgJitter * 2
-    hdgs.push(Math.round(((i === N - 1 ? track.heading : hdgAcc) + 360) % 360))
-
-    // Time label
-    const ago = (N - 1 - i) * 5
-    times.push(ago === 0 ? 'NOW' : `T-${ago}m`)
-  }
-
-  // Force last point to exact current state
-  alts[N - 1]  = track.altitude_ft
-  spds[N - 1]  = Math.round(track.speed_kts)
-  hdgs[N - 1]  = track.heading
-
-  return { alts, spds, hdgs, times, N }
-}
-
-// ── SimTrail3D component ──────────────────────────────────────────────────────
-function SimTrail3D({ track }: { track: SimTrack }) {
-  const accent = CLASS_STYLES[track.ai_class]?.color ?? '#38bdf8'
-  const { alts, spds, hdgs, times, N } = generateSimTrail(track)
-
-  function hdgDelta(a: number, b: number) {
-    const d = Math.abs(a - b); return d > 180 ? 360 - d : d
-  }
-
-  const turns   = alts.map((_, i) => i === 0 ? 0 : hdgDelta(hdgs[i], hdgs[i - 1]))
-  const maxTurn = Math.max(...turns, 0.1)
-  const turnNorm = turns.map(t => t / maxTurn)
-
-  const altMin = Math.min(...alts), altMax = Math.max(...alts)
-  const spdMin = Math.min(...spds), spdMax = Math.max(...spds)
-  const peakTurn = Math.max(...turns)
-  const manScore = Math.min(100, Math.round(((altMax-altMin)/500) + ((spdMax-spdMin)/10) + (peakTurn*1.5)))
-
-  const colorscale: [number, string][] = [
-    [0, '#38bdf8'], [0.35, '#38bdf8'], [0.65, '#f59e0b'], [1, '#ef4444'],
-  ]
-
-  const tIdx    = alts.map((_, i) => i)
-  const altsKft = alts.map(a => +(a / 1000).toFixed(2))
-
-  const eventIdx = [...turns.keys()]
-    .filter(i => i > 0)
-    .sort((a, b) => turns[b] - turns[a])
-    .slice(0, 3)
-
-  const statCards = [
-    { label:'ALT Δ',    value:`${((altMax-altMin)/1000).toFixed(0)} kft`, color:'#38bdf8' },
-    { label:'SPD Δ',    value:`${Math.round(spdMax-spdMin)} kts`,         color:'#a78bfa' },
-    { label:'MAX TURN', value:`${peakTurn.toFixed(0)}°/5m`,               color:'#fb923c' },
-    { label:'MANEUVER', value:String(manScore),                           color: accent   },
-  ]
-
-  return (
-    <div className="space-y-3">
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-1.5">
-        {statCards.map(({ label, value, color }) => (
-          <div key={label} className="rounded-lg px-2 py-2 text-center"
-            style={{ background:'rgba(12,18,30,0.9)', border:`1px solid ${color}28` }}>
-            <div style={{ color:'#475569', fontSize:8, fontFamily:'monospace', letterSpacing:1.5, marginBottom:3 }}>{label}</div>
-            <div style={{ color, fontSize:13, fontWeight:700, fontFamily:'monospace', lineHeight:1 }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Turn-rate legend */}
-      <div className="flex items-center gap-2 px-1">
-        <span style={{ color:'#475569', fontSize:9, fontFamily:'monospace' }}>TURN RATE</span>
-        <div className="flex-1 h-1.5 rounded-full"
-          style={{ background:'linear-gradient(90deg, #38bdf8 0%, #38bdf8 35%, #f59e0b 65%, #ef4444 100%)' }}/>
-        <span style={{ color:'#475569', fontSize:9 }}>LOW → HIGH</span>
-      </div>
-
-      {/* 3D Plot — stopPropagation so modal scroll + select-none don't steal events */}
-      <div
-        style={{ userSelect:'text', touchAction:'none' }}
-        onMouseDown={e => e.stopPropagation()}
-        onPointerDown={e => e.stopPropagation()}
-        onWheel={e => e.stopPropagation()}
-      >
-      <Plot
-        data={([
-          // Trail line
-          {
-            type:'scatter3d', mode:'lines',
-            x:tIdx, y:altsKft, z:spds,
-            line:{ color:turnNorm, colorscale, width:5, cmin:0, cmax:1 },
-            hoverinfo:'skip', showlegend:false, name:'Trail',
-          },
-          // Nodes
-          {
-            type:'scatter3d', mode:'markers',
-            x:tIdx, y:altsKft, z:spds,
-            marker:{
-              size:turnNorm.map(t => 4+t*6), color:turnNorm,
-              colorscale, cmin:0, cmax:1, opacity:0.9,
-              line:{ color:'rgba(0,0,0,0.3)', width:0.5 },
-            },
-            customdata:times.map((ts, i) => [ts, altsKft[i], spds[i], hdgs[i], turns[i].toFixed(1)]),
-            hovertemplate:'<b>%{customdata[0]}</b><br>Alt: <b>%{customdata[1]} kft</b>  Spd: <b>%{customdata[2]} kts</b><br>Hdg: %{customdata[3]}°  TurnΔ: <b>%{customdata[4]}°</b><extra></extra>',
-            showlegend:false, name:'Nodes',
-          },
-          // Altitude shadow lines
-          ...tIdx.map(i => ({
-            type:'scatter3d', mode:'lines',
-            x:[i,i], y:[altsKft[i],0], z:[spds[i],spds[i]],
-            line:{ color:`${accent}16`, width:1 },
-            hoverinfo:'skip', showlegend:false, name:'',
-          })),
-          // Maneuver event markers
-          {
-            type:'scatter3d', mode:'markers+text' as any,
-            x:eventIdx.map(i=>tIdx[i]), y:eventIdx.map(i=>altsKft[i]), z:eventIdx.map(i=>spds[i]),
-            marker:{ size:13, color:'#ef4444', symbol:'diamond', line:{ color:'white', width:1.5 }, opacity:1 },
-            text:eventIdx.map(i=>`${turns[i].toFixed(0)}°`),
-            textposition:'top center', textfont:{ color:'#fca5a5', size:9, family:'monospace' },
-            customdata:eventIdx.map(i=>[times[i], altsKft[i], spds[i], turns[i].toFixed(1)]),
-            hovertemplate:'⚠ MANEUVER<br><b>%{customdata[0]}</b><br>Alt: %{customdata[1]} kft  Spd: %{customdata[2]} kts<br>Turn: <b>%{customdata[3]}°</b><extra></extra>',
-            showlegend:false, name:'Events',
-          },
-          // Current position
-          {
-            type:'scatter3d', mode:'markers+text' as any,
-            x:[tIdx[N-1]], y:[altsKft[N-1]], z:[spds[N-1]],
-            marker:{ size:12, color:accent, symbol:'circle', line:{ color:'white', width:2 }, opacity:1 },
-            text:['NOW'], textposition:'top center', textfont:{ color:'white', size:9, family:'monospace' },
-            hoverinfo:'skip', showlegend:false, name:'Current',
-          },
-        ] as any)}
-        layout={{
-          height:320,
-          paper_bgcolor:'rgba(0,0,0,0)',
-          scene:{
-            bgcolor:'rgba(6,10,16,0.95)',
-            xaxis:{ title:{ text:'Time →', font:{ color:'#475569', size:10 } }, tickvals:tIdx, ticktext:times.map((t,i)=>i%4===0?t:''), tickfont:{ color:'#334155', size:8 }, color:'#1e293b', gridcolor:'#1e293b', showbackground:false, zeroline:false },
-            yaxis:{ title:{ text:'Alt (kft)', font:{ color:'#475569', size:10 } }, tickfont:{ color:'#334155', size:8 }, color:'#1e293b', gridcolor:'#1e293b', showbackground:false, zeroline:false },
-            zaxis:{ title:{ text:'Speed (kts)', font:{ color:'#475569', size:10 } }, tickfont:{ color:'#334155', size:8 }, color:'#1e293b', gridcolor:'#1e293b', showbackground:false, zeroline:false },
-            camera:{ eye:{ x:1.8, y:-1.6, z:1.1 } },
-            aspectmode:'manual', aspectratio:{ x:1.4, y:1, z:0.9 },
-          },
-          margin:{ t:4, b:4, l:0, r:0 },
-          showlegend:false,
-          annotations:[{
-            text:`${track.track_id} · ${N} waypoints · ${(N-1)*5} min history (reconstructed)`,
-            showarrow:false, x:0, y:0, xref:'paper', yref:'paper',
-            xanchor:'left', yanchor:'bottom',
-            font:{ color:'#1e293b', size:9 },
-          }],
-        }}
-        config={{
-          displayModeBar: 'hover',
-          scrollZoom: true,
-          responsive: true,
-          modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'] as any,
-        }}
-        style={{ width:'100%' }}
-      />
-      </div>
-
-      {/* Maneuver events */}
-      {eventIdx.length > 0 && (
-        <div className="space-y-1">
-          <p style={{ color:'#475569', fontSize:9, fontFamily:'monospace', letterSpacing:2 }}>TOP MANEUVER EVENTS</p>
-          {eventIdx.map((idx, rank) => (
-            <div key={idx} className="flex items-center gap-3 px-3 py-1.5 rounded-lg"
-              style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)' }}>
-              <span style={{ color:'#ef4444', fontFamily:'monospace', fontSize:11, minWidth:16 }}>#{rank+1}</span>
-              <span style={{ color:'#94a3b8', fontSize:11, flex:1 }}>{times[idx]}</span>
-              <span style={{ color:'#fca5a5', fontSize:11 }}>{altsKft[idx]} kft · {spds[idx]} kts</span>
-              <span style={{ color:'#ef4444', fontFamily:'monospace', fontSize:11, minWidth:44, textAlign:'right' }}>{turns[idx].toFixed(0)}° turn</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+  return {
+    track_id:        t.track_id,
+    ai_class:        t.ai_class,
+    speed_kts:       t.speed_kts,
+    heading:         t.heading,
+    hist_alts:       alts,
+    hist_speeds:     spds,
+    hist_headings:   hdgs,
+    hist_timestamps: times,
+  } as unknown as Track
 }
 
 // ── Inspect modal ─────────────────────────────────────────────────────────────
@@ -936,15 +762,28 @@ function InspectModal({ track, onClose }: { track: SimTrack; onClose: () => void
             </div>
           </section>
 
+          {/* Anomaly Detection */}
+          <section>
+            <h4 className="text-xs font-bold text-amber-400 tracking-[0.2em] mb-3">⚠ ANOMALY DETECTION</h4>
+            <AnomalyAlerts anomalies={track.anomalies ?? []}/>
+          </section>
+
           {/* 3D Trajectory */}
           <section>
-            <h4 className="text-xs font-bold text-cyan-400 tracking-[0.2em] mb-3">📈 FLIGHT TRAJECTORY — 3D ENVELOPE (RECONSTRUCTED)</h4>
-            <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl p-3 select-auto"
+            <h4 className="text-xs font-bold text-cyan-400 tracking-[0.2em] mb-3">
+              📈 FLIGHT TRAJECTORY — 3D ENVELOPE
+              {!track.hist_alts && <span className="ml-2 text-slate-600 font-normal normal-case tracking-normal">(reconstructed)</span>}
+            </h4>
+            {/* Disable modal scroll while interacting with the 3D chart */}
+            <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl p-3"
               style={{ userSelect:'text' }}
               onMouseEnter={e => { (e.currentTarget.closest('.overflow-y-auto') as HTMLElement | null)?.style.setProperty('overflow-y','hidden') }}
               onMouseLeave={e => { (e.currentTarget.closest('.overflow-y-auto') as HTMLElement | null)?.style.setProperty('overflow-y','auto') }}
+              onMouseDown={e => e.stopPropagation()}
+              onPointerDown={e => e.stopPropagation()}
+              onWheel={e => e.stopPropagation()}
             >
-              <SimTrail3D track={track}/>
+              <Trail3D track={simToTrailTrack(track)}/>
             </div>
           </section>
 

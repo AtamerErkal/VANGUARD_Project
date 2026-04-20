@@ -1,4 +1,4 @@
-import type { XAIItem, SensorVote, FusionResult } from './types'
+import type { XAIItem, SensorVote, FusionResult, Anomaly } from './types'
 
 export interface SimPos {
   x: number
@@ -25,6 +25,13 @@ export interface SimTrack {
   flight_profile:    string
   weather:           string
   thermal_signature: string
+  // anomaly detection (backend-submitted tracks only)
+  anomalies?:        Anomaly[]
+  // trajectory history (backend-submitted; demo tracks use synthetic fallback)
+  hist_alts?:        number[]
+  hist_speeds?:      number[]
+  hist_headings?:    number[]
+  hist_timestamps?:  string[]
 }
 
 export interface SimSubmitRequest {

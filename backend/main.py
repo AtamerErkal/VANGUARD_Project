@@ -500,6 +500,7 @@ def predict_endpoint(req: PredictRequest):
 
 from backend.sim import sim_mgr, assign_position
 import uuid as _uuid
+import random as _random
 
 class SimSubmitRequest(BaseModel):
     altitude_ft:       float
@@ -511,6 +512,54 @@ class SimSubmitRequest(BaseModel):
     flight_profile:    str
     weather:           str
     thermal_signature: str
+
+
+def generate_sim_hist(inp: dict, track_id: str):
+    """Deterministic 14-point trajectory history from current kinematic state."""
+    seed = sum(ord(c) for c in track_id)
+    rng  = _random.Random(seed)
+    N    = 14
+    alt, spd, hdg = inp["altitude_ft"], inp["speed_kts"], inp["heading"]
+    profile = inp["flight_profile"]
+
+    _PROFILE_PARAMS = {
+        "LOW_ALTITUDE_FLYING":   {"alt_trend": -20000, "spd_trend": 110, "hdg_jitter": 10, "alt_noise": 400},
+        "AGGRESSIVE_MANEUVERS":  {"alt_trend":   4000, "spd_trend":  85, "hdg_jitter": 32, "alt_noise": 1600},
+        "CLIMBING":              {"alt_trend": -12000, "spd_trend":  40, "hdg_jitter":  4, "alt_noise": 300},
+        "DIVING":                {"alt_trend":  16000, "spd_trend":  65, "hdg_jitter":  6, "alt_noise": 500},
+        "STABLE_CRUISE":         {"alt_trend":    600, "spd_trend":  15, "hdg_jitter":  3, "alt_noise": 200},
+        "HOLDING_PATTERN":       {"alt_trend":    200, "spd_trend":  10, "hdg_jitter": 42, "alt_noise": 150},
+        "EVASIVE_MANEUVERS":     {"alt_trend":   5000, "spd_trend": 100, "hdg_jitter": 48, "alt_noise": 2000},
+        "LOITERING":             {"alt_trend":    800, "spd_trend":  20, "hdg_jitter": 22, "alt_noise": 300},
+    }
+    p = _PROFILE_PARAMS.get(profile, _PROFILE_PARAMS["STABLE_CRUISE"])
+
+    now   = datetime.now(timezone.utc)
+    alts, spds, hdgs, times = [], [], [], []
+    hdg_acc = hdg
+
+    for i in range(N):
+        f        = i / (N - 1)
+        base_alt = alt + p["alt_trend"] * (1 - f)
+        noise    = (rng.random() - 0.5) * p["alt_noise"]
+        alts.append(max(200, round(base_alt + noise)))
+
+        base_spd = spd + p["spd_trend"] * (1 - f)
+        spds.append(max(120, round(base_spd + (rng.random() - 0.5) * 20)))
+
+        if i < N - 1:
+            hdg_acc = (hdg_acc + (rng.random() - 0.5) * p["hdg_jitter"] * 2) % 360
+            hdgs.append(round(hdg_acc, 1))
+        else:
+            hdgs.append(round(hdg, 1))
+
+        ago = (N - 1 - i) * 5
+        ts  = (now - timedelta(minutes=ago)).strftime("%H:%M UTC") if ago else now.strftime("%H:%M UTC")
+        times.append(ts)
+
+    alts[-1] = round(alt)
+    spds[-1] = round(spd)
+    return alts, spds, hdgs, times
 
 
 @app.post("/sim/sessions")
@@ -543,17 +592,26 @@ async def submit_sim_track(session_id: str, req: SimSubmitRequest):
     fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
     pos    = assign_position(result["classification"])
     xai    = compute_xai(inp, result)
+    anom   = detect_anomalies(inp)
+
+    track_id = f"SIM-{str(_uuid.uuid4())[:4].upper()}"
+    h_alts, h_spds, h_hdgs, h_times = generate_sim_hist(inp, track_id)
 
     track = {
-        "track_id":     f"SIM-{str(_uuid.uuid4())[:4].upper()}",
-        "submitted_at": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
-        "ai_class":     result["classification"],
-        "ai_conf":      result["confidence"],
-        "ai_probs":     result["probabilities"],
-        "pos":          pos,
-        "sensor_votes": sv,
-        "fusion":       fusion,
-        "xai":          xai,
+        "track_id":        track_id,
+        "submitted_at":    datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+        "ai_class":        result["classification"],
+        "ai_conf":         result["confidence"],
+        "ai_probs":        result["probabilities"],
+        "pos":             pos,
+        "sensor_votes":    sv,
+        "fusion":          fusion,
+        "xai":             xai,
+        "anomalies":       anom,
+        "hist_alts":       h_alts,
+        "hist_speeds":     h_spds,
+        "hist_headings":   h_hdgs,
+        "hist_timestamps": h_times,
         **req.model_dump(),
     }
 
