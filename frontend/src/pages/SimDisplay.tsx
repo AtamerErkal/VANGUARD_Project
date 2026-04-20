@@ -719,7 +719,13 @@ function SimTrail3D({ track }: { track: SimTrack }) {
         <span style={{ color:'#475569', fontSize:9 }}>LOW → HIGH</span>
       </div>
 
-      {/* 3D Plot */}
+      {/* 3D Plot — stopPropagation so modal scroll + select-none don't steal events */}
+      <div
+        style={{ userSelect:'text', touchAction:'none' }}
+        onMouseDown={e => e.stopPropagation()}
+        onPointerDown={e => e.stopPropagation()}
+        onWheel={e => e.stopPropagation()}
+      >
       <Plot
         data={([
           // Trail line
@@ -789,9 +795,15 @@ function SimTrail3D({ track }: { track: SimTrack }) {
             font:{ color:'#1e293b', size:9 },
           }],
         }}
-        config={{ displayModeBar:false, responsive:true }}
+        config={{
+          displayModeBar: 'hover',
+          scrollZoom: true,
+          responsive: true,
+          modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'] as any,
+        }}
         style={{ width:'100%' }}
       />
+      </div>
 
       {/* Maneuver events */}
       {eventIdx.length > 0 && (
@@ -927,7 +939,11 @@ function InspectModal({ track, onClose }: { track: SimTrack; onClose: () => void
           {/* 3D Trajectory */}
           <section>
             <h4 className="text-xs font-bold text-cyan-400 tracking-[0.2em] mb-3">📈 FLIGHT TRAJECTORY — 3D ENVELOPE (RECONSTRUCTED)</h4>
-            <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl p-3">
+            <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl p-3 select-auto"
+              style={{ userSelect:'text' }}
+              onMouseEnter={e => { (e.currentTarget.closest('.overflow-y-auto') as HTMLElement | null)?.style.setProperty('overflow-y','hidden') }}
+              onMouseLeave={e => { (e.currentTarget.closest('.overflow-y-auto') as HTMLElement | null)?.style.setProperty('overflow-y','auto') }}
+            >
               <SimTrail3D track={track}/>
             </div>
           </section>
