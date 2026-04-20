@@ -1,3 +1,5 @@
+import type { XAIItem, SensorVote, FusionResult } from './types'
+
 export interface SimPos {
   x: number
   y: number
@@ -8,9 +10,12 @@ export interface SimTrack {
   submitted_at:      string        // "HH:MM:SS UTC"
   ai_class:          string
   ai_conf:           number
+  ai_probs:          Record<string, number>
   pos:               SimPos
-  sensor_votes:      Record<string, { label: string; icon: string; vote: string; conf: number; reading: string }>
-  // kinematic / ew / env fields echoed back
+  sensor_votes:      Record<string, SensorVote>
+  fusion:            FusionResult
+  xai:               XAIItem[]
+  // kinematic / ew / env
   altitude_ft:       number
   speed_kts:         number
   rcs_m2:            number

@@ -542,15 +542,18 @@ async def submit_sim_track(session_id: str, req: SimSubmitRequest):
     sv     = track_sensor_votes(inp)
     fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
     pos    = assign_position(result["classification"])
+    xai    = compute_xai(inp, result)
 
     track = {
-        "track_id":    f"SIM-{str(_uuid.uuid4())[:4].upper()}",
+        "track_id":     f"SIM-{str(_uuid.uuid4())[:4].upper()}",
         "submitted_at": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
-        "ai_class":    result["classification"],
-        "ai_conf":     result["confidence"],
-        "pos":         pos,
+        "ai_class":     result["classification"],
+        "ai_conf":      result["confidence"],
+        "ai_probs":     result["probabilities"],
+        "pos":          pos,
         "sensor_votes": sv,
-        "fusion":      fusion,
+        "fusion":       fusion,
+        "xai":          xai,
         **req.model_dump(),
     }
 
