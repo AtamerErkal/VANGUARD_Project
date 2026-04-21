@@ -444,7 +444,7 @@ def compute_model_stats() -> dict:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@app.get("/")
+@app.get("/health")
 def health():
     return {"status": "ok", "model_ready": _model_ready}
 
