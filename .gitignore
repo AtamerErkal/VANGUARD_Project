@@ -24,6 +24,8 @@ frontend/dist/
 
 # Generated data (run `python retrain.py` to regenerate)
 data/*.csv
+# Exception: main dataset needed by /api/model-stats on Render
+!data/vanguard_air_tracks_fused.csv
 data/processed/
 data/raw/
 data/cache/
