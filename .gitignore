@@ -47,6 +47,9 @@ Thumbs.db
 # Claude Code internal
 .claude/
 
+# Old nested project copy (can be manually deleted from Explorer)
+VANGUARD_Project/
+
 # Streamlit
 .streamlit/
 
