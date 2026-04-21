@@ -631,3 +631,20 @@ async def sim_ws(session_id: str, ws: WebSocket):
             await ws.receive_text()   # keep-alive ping
     except WebSocketDisconnect:
         sim_mgr.disconnect(session_id, ws)
+
+
+# ── Static file serving (HF Spaces / single-container deployments) ────────────
+# Mount AFTER all API + WebSocket routes so API paths take precedence.
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse as _FileResponse
+
+_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+if _DIST.exists():
+    # Serve Vite asset chunks (hashed filenames) under /assets
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="spa-assets")
+
+    @app.get("/{full_path:path}")
+    async def _spa_fallback(full_path: str):
+        """SPA catch-all — return index.html for any unmatched GET so React Router works."""
+        return _FileResponse(_DIST / "index.html")

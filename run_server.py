@@ -21,9 +21,10 @@ if not app_module._model_ready:
     print("[VANGUARD] ERROR — model failed to load. Run: python retrain.py")
     sys.exit(1)
 
-# Render injects PORT; locally defaults to 8000
-host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
-port = int(os.environ.get("PORT", 8000))
+# Cloud platforms inject PORT / SPACE_ID; locally defaults to 8000
+_is_cloud = os.environ.get("RENDER") or os.environ.get("SPACE_ID")
+host = "0.0.0.0" if _is_cloud else "127.0.0.1"
+port = int(os.environ.get("PORT", 7860 if os.environ.get("SPACE_ID") else 8000))
 
 print(f"[VANGUARD] Starting on {host}:{port}")
 uvicorn.run(app_module.app, host=host, port=port, reload=False)
