@@ -11,7 +11,8 @@ const BASE = import.meta.env.VITE_API_URL ?? ''
 
 function getWsUrl(sid: string): string {
   if (BASE) return BASE.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + `/sim/${sid}/ws`
-  return `ws://${window.location.host}/sim/${sid}/ws`
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/sim/${sid}/ws`
 }
 
 // ── Coordinate helpers ────────────────────────────────────────────────────────
