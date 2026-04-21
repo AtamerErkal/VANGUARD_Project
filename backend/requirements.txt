@@ -2,8 +2,8 @@
 
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
-# CPU-only torch — much smaller than full install (~200 MB vs ~700 MB)
-torch==2.3.0+cpu
+# CPU-only torch (2.9.1 = latest available on pytorch CPU wheel index)
+torch==2.9.1+cpu
 joblib==1.4.2
 numpy==1.26.4
 pandas==2.2.2
