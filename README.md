@@ -1,8 +1,8 @@
+![VANGUARD Tactical Interface](images/VANGUARD_1.png)
+
 # 🛡️ VANGUARD AI — Tactical Aircraft Classification System
 
 A real-time, AI-powered air picture system that classifies airborne contacts using multi-sensor fusion and a PyTorch neural network. Built as a full-stack demo of human-machine teaming for military threat assessment.
-
-![VANGUARD Tactical Interface](images/VANGUARD_1.png)
 
 ---
 
