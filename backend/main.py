@@ -16,6 +16,7 @@ from typing import Optional
 import sys
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
+from backend.kalman import ConstantVelocityKalman, compute_track_quality, dempster_shafer_fusion
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 sys.path.append(str(Path(__file__).parent.parent))
@@ -77,6 +78,67 @@ def predict_aircraft(data: dict) -> dict:
         "confidence":     float(conf.item()),
         "probabilities":  {c: float(p) for c, p in zip(_label_encoder.classes_, probs[0].numpy())},
     }
+
+# ── MC Dropout uncertainty estimation ────────────────────────────────────────
+
+_MC_SAMPLES = 20
+
+def predict_with_uncertainty(data: dict) -> dict:
+    """
+    Monte Carlo Dropout inference: run _MC_SAMPLES stochastic forward passes
+    with dropout active to estimate epistemic (model) uncertainty.
+
+    Returns the same keys as predict_aircraft() plus:
+        epistemic_uncertainty — mean std across classes (0 = certain)
+        uncertainty_label     — HIGH / MEDIUM / LOW
+    """
+    df  = pd.DataFrame([data])
+    cat = ["esm_signature", "iff_mode", "flight_profile", "weather", "thermal_signature"]
+    df  = pd.get_dummies(df, columns=cat)
+    for col in _feature_cols:
+        if col not in df.columns:
+            df[col] = 0
+    df = df[_feature_cols]
+    X  = _scaler.transform(df.values.astype(float))
+    x_t = torch.FloatTensor(X)
+
+    # Enable only Dropout layers — BatchNorm stays in eval mode to avoid
+    # the batch-size-1 constraint while still sampling stochastic passes.
+    _model.eval()
+    for m in _model.modules():
+        if isinstance(m, nn.Dropout):
+            m.train()
+
+    samples = []
+    with torch.no_grad():
+        for _ in range(_MC_SAMPLES):
+            out   = _model(x_t)
+            probs = torch.softmax(out, dim=1).numpy()[0]
+            samples.append(probs)
+    _model.eval()    # restore all layers to deterministic mode
+
+    samples    = np.array(samples)          # (_MC_SAMPLES, n_classes)
+    mean_probs = samples.mean(axis=0)
+    std_probs  = samples.std(axis=0)
+
+    pred_idx             = int(np.argmax(mean_probs))
+    epistemic_uncertainty = float(std_probs.mean())
+
+    if epistemic_uncertainty < 0.04:
+        uncertainty_label = "LOW"
+    elif epistemic_uncertainty < 0.10:
+        uncertainty_label = "MEDIUM"
+    else:
+        uncertainty_label = "HIGH"
+
+    return {
+        "classification":       _label_encoder.inverse_transform([pred_idx])[0],
+        "confidence":           float(mean_probs[pred_idx]),
+        "probabilities":        {c: float(p) for c, p in zip(_label_encoder.classes_, mean_probs)},
+        "epistemic_uncertainty": round(epistemic_uncertainty, 4),
+        "uncertainty_label":    uncertainty_label,
+    }
+
 
 # ── XAI ──────────────────────────────────────────────────────────────────────
 
@@ -292,6 +354,7 @@ _CONFIGS = [
 
 _N_HIST    = 9
 _STEP_MINS = 5
+_KF        = ConstantVelocityKalman()
 
 
 def _build_tracks():
@@ -340,13 +403,26 @@ def _build_tracks():
                    weather=weather, thermal_signature=thermal)
 
         try:
-            res = predict_aircraft(inp)
+            res = predict_with_uncertainty(inp)
         except Exception:
-            res = {"classification": "NEUTRAL", "confidence": 0.5, "probabilities": {}}
+            res = {
+                "classification": "NEUTRAL", "confidence": 0.5, "probabilities": {},
+                "epistemic_uncertainty": 0.0, "uncertainty_label": "LOW",
+            }
 
-        sv     = track_sensor_votes(inp)
-        fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
-        xai    = compute_xai(inp, res)
+        sv       = track_sensor_votes(inp)
+        fusion   = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+        ds_fusion = dempster_shafer_fusion(sv)
+        xai      = compute_xai(inp, res)
+
+        # ── Kalman track quality (Track-Level Fusion) ─────────────────────────
+        meas = np.column_stack([
+            hlats,
+            hlons,
+            [a / 1000.0 for a in halts],   # feet → kilo-feet for numeric stability
+        ])
+        kf_state    = _KF.filter(meas)
+        track_qual  = compute_track_quality(kf_state)
 
         # Weather comparison for IRST
         irst_base = sv["irst"]["base_conf"]
@@ -358,20 +434,24 @@ def _build_tracks():
         tracks.append({
             "track_id": f"TRK-{i+1:03d}",
             **inp,
-            "ai_class":       res["classification"],
-            "ai_conf":        res["confidence"],
-            "ai_probs":       res["probabilities"],
-            "sensor_votes":   sv,
-            "fusion":         fusion,
-            "anomalies":      detect_anomalies(inp),
-            "xai":            xai,
-            "weather_impact": weather_impact,
-            "hist_lats":       hlats,
-            "hist_lons":       hlons,
-            "hist_alts":       halts,
-            "hist_speeds":     hspds,
-            "hist_headings":   hhdgs,
-            "hist_timestamps": tstamps,
+            "ai_class":              res["classification"],
+            "ai_conf":               res["confidence"],
+            "ai_probs":              res["probabilities"],
+            "epistemic_uncertainty": res["epistemic_uncertainty"],
+            "uncertainty_label":     res["uncertainty_label"],
+            "sensor_votes":          sv,
+            "fusion":                fusion,
+            "ds_fusion":             ds_fusion,
+            "track_quality":         track_qual,
+            "anomalies":             detect_anomalies(inp),
+            "xai":                   xai,
+            "weather_impact":        weather_impact,
+            "hist_lats":             hlats,
+            "hist_lons":             hlons,
+            "hist_alts":             halts,
+            "hist_speeds":           hspds,
+            "hist_headings":         hhdgs,
+            "hist_timestamps":       tstamps,
         })
     return tracks
 
@@ -481,17 +561,19 @@ def model_stats_endpoint():
 def predict_endpoint(req: PredictRequest):
     if not _model_ready:
         raise HTTPException(503, "Model not loaded")
-    inp    = req.model_dump()
-    result = predict_aircraft(inp)
-    xai    = compute_xai(inp, result)
-    sv     = track_sensor_votes(inp)
-    fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+    inp       = req.model_dump()
+    result    = predict_with_uncertainty(inp)
+    xai       = compute_xai(inp, result)
+    sv        = track_sensor_votes(inp)
+    fusion    = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+    ds        = dempster_shafer_fusion(sv)
     irst_base = sv["irst"]["base_conf"]
     return {
         **result,
         "xai":            xai,
         "sensor_votes":   sv,
         "fusion":         fusion,
+        "ds_fusion":      ds,
         "weather_impact": {w: round(irst_base * f, 2) for w, f in WEATHER_IRST_FACTOR.items()},
     }
 
@@ -587,9 +669,10 @@ async def submit_sim_track(session_id: str, req: SimSubmitRequest):
         raise HTTPException(404, "Session not found")
 
     inp    = {**req.model_dump(), "latitude": 0.0, "longitude": 0.0}
-    result = predict_aircraft(inp)
+    result = predict_with_uncertainty(inp)
     sv     = track_sensor_votes(inp)
     fusion = compute_fusion(sv, SENSOR_BASE_WEIGHTS)
+    ds     = dempster_shafer_fusion(sv)
     pos    = assign_position(result["classification"])
     xai    = compute_xai(inp, result)
     anom   = detect_anomalies(inp)
@@ -600,14 +683,17 @@ async def submit_sim_track(session_id: str, req: SimSubmitRequest):
     track = {
         "track_id":        track_id,
         "submitted_at":    datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
-        "ai_class":        result["classification"],
-        "ai_conf":         result["confidence"],
-        "ai_probs":        result["probabilities"],
-        "pos":             pos,
-        "sensor_votes":    sv,
-        "fusion":          fusion,
-        "xai":             xai,
-        "anomalies":       anom,
+        "ai_class":              result["classification"],
+        "ai_conf":               result["confidence"],
+        "ai_probs":              result["probabilities"],
+        "epistemic_uncertainty": result["epistemic_uncertainty"],
+        "uncertainty_label":     result["uncertainty_label"],
+        "pos":                   pos,
+        "sensor_votes":          sv,
+        "fusion":                fusion,
+        "ds_fusion":             ds,
+        "xai":                   xai,
+        "anomalies":             anom,
         "hist_alts":       h_alts,
         "hist_speeds":     h_spds,
         "hist_headings":   h_hdgs,

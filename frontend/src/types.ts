@@ -29,6 +29,20 @@ export interface XAIItem {
   delta:      number
 }
 
+export interface TrackQuality {
+  label:             'HIGH' | 'MEDIUM' | 'LOW'
+  uncertainty:       number
+  covariance_trace:  number
+  smoothed_position: { lat: number; lon: number; alt_ft: number }
+  estimated_velocity: { dlat_per_step: number; dlon_per_step: number }
+}
+
+export interface DSFusion {
+  best:          string
+  probs:         Record<string, number>
+  conflict_mass: number
+}
+
 export interface Track {
   track_id:             string
   latitude:             number
@@ -45,8 +59,12 @@ export interface Track {
   ai_class:             string
   ai_conf:              number
   ai_probs:             Record<string, number>
+  epistemic_uncertainty?: number
+  uncertainty_label?:     'LOW' | 'MEDIUM' | 'HIGH'
   sensor_votes:         Record<string, SensorVote>
   fusion:               FusionResult
+  ds_fusion?:           DSFusion
+  track_quality?:       TrackQuality
   anomalies:            Anomaly[]
   xai:                  XAIItem[]
   weather_impact:       Record<string, number>
@@ -107,14 +125,14 @@ export interface ApprovalState {
   override_class?: string
 }
 
-// NATO standard air picture classification (STANAG)
+// NATO standard air picture classification (STANAG APP-6)
 export const CLASS_STYLES: Record<string, { color: string; bg: string; icon: string; nato: string }> = {
-  'HOSTILE':        { color: '#ef4444', bg: '#450a0a', icon: '🚨', nato: 'H' },
-  'SUSPECT':        { color: '#f97316', bg: '#431407', icon: '⚠️', nato: 'S' },
-  'UNKNOWN':        { color: '#a78bfa', bg: '#2e1065', icon: '❓', nato: 'U' },
-  'NEUTRAL':        { color: '#94a3b8', bg: '#1e293b', icon: '🏳️', nato: 'N' },
-  'ASSUMED FRIEND': { color: '#34d399', bg: '#064e3b', icon: '🤝', nato: 'A' },
-  'FRIEND':         { color: '#22c55e', bg: '#14532d', icon: '🛡️', nato: 'F' },
+  'HOSTILE':        { color: '#f87171', bg: '#3f0808', icon: '◆', nato: 'H' },
+  'SUSPECT':        { color: '#fb923c', bg: '#3b1003', icon: '◈', nato: 'S' },
+  'UNKNOWN':        { color: '#c4b5fd', bg: '#2d1b69', icon: '◻', nato: 'U' },
+  'NEUTRAL':        { color: '#94a3b8', bg: '#1e293b', icon: '▬', nato: 'N' },
+  'ASSUMED FRIEND': { color: '#34d399', bg: '#053f2e', icon: '◉', nato: 'A' },
+  'FRIEND':         { color: '#4ade80', bg: '#0f3320', icon: '●', nato: 'F' },
 }
 
 export const SENSOR_ORDER = ['radar', 'esm', 'irst', 'iff'] as const

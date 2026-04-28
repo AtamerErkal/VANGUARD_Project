@@ -25,20 +25,55 @@ The AI classifies each contact by combining kinematic, radar, ESM, IRST and IFF 
 
 ## System Architecture
 
+### Deployment tiers — Cloud ↔ Fog ↔ Edge
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    VANGUARD TACTICAL UI                 │
-│  React 18 · TypeScript · MapLibre GL · Plotly           │
-└────────────────────┬────────────────────────────────────┘
-                     │ REST API
-┌────────────────────▼────────────────────────────────────┐
-│                  FastAPI Backend                        │
-│  • PyTorch MLP classifier  (23 features → 6 classes)   │
-│  • Weighted sensor fusion  (Radar/ESM/IRST/IFF)        │
-│  • Perturbation-based XAI  (feature importance)        │
-│  • What-if scenario engine                             │
-│  • Anomaly detection                                   │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  ☁  CLOUD  — training & fleet analytics                        │
+│  retrain.py · model registry · historical analysis             │
+│  (offline; does not participate in real-time classification)    │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │  model artefacts
+┌──────────────────────────▼──────────────────────────────────────┐
+│  🌫  FOG  — mission system node (FastAPI backend)               │
+│  • Track-Level Fusion  — CV Kalman filter · IMM-inspired QA    │
+│  • Decision-Level Fusion — Weighted voting · Dempster-Shafer   │
+│  • PyTorch MLP · MC Dropout epistemic uncertainty              │
+│  • Perturbation-based XAI · What-if engine · Anomaly detection │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │  REST / WebSocket
+┌──────────────────────────▼──────────────────────────────────────┐
+│  📡  EDGE  — sensor nodes (simulated)                           │
+│  • Radar  — kinematics + RCS                                    │
+│  • ESM    — emission / jamming signature                        │
+│  • IRST   — thermal (weather-degraded)                          │
+│  • IFF    — transponder challenge-response                      │
+│  • AIS    — maritime identity (architecture-ready)              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Fusion pipeline — four levels
+
+```
+Raw sensor streams
+       │
+       ▼  Sensor-Level Fusion
+Weighted vote per sensor (Radar 0.40 · ESM 0.35 · IRST 0.15 · IFF 0.10)
+Dempster-Shafer evidence theory (alternative engine — toggle in UI)
+       │
+       ▼  Feature-Level Fusion
+23-feature vector — kinematic + radar + ESM + IRST + IFF
+pd.get_dummies encoding → StandardScaler
+       │
+       ▼  Track-Level Fusion
+CV Kalman filter over 10-point trajectory history
+Track quality score from posterior covariance trace (HIGH / MEDIUM / LOW)
+Kalman-smoothed position + estimated velocity
+       │
+       ▼  Decision-Level Fusion
+PyTorch MLP (23 → 128 → 64 → 32 → 6) with MC Dropout
+Epistemic uncertainty (mean std across 20 stochastic passes)
+Human-in-the-loop expert approval / override
 ```
 
 ### Neural Network
