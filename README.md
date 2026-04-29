@@ -1,3 +1,12 @@
+---
+title: VANGUARD AI
+emoji: 🛡️
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
+
 ![VANGUARD Tactical Interface](images/VANGUARD_1.png)
 
 # 🛡️ VANGUARD AI — Tactical Aircraft Classification System
