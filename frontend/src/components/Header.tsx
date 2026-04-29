@@ -45,6 +45,7 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
   const [clock,       setClock]       = useState('')
   const [modelOpen,   setModelOpen]   = useState(false)
   const [sensorsOpen, setSensorsOpen] = useState(false)
+  const [threatOpen,  setThreatOpen]  = useState(false)
   const [stats,       setStats]       = useState<ModelStats | null>(null)
   const [statsLoading,setStatsLoading]= useState(false)
 
@@ -92,46 +93,59 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
         <div className="absolute top-0 left-0 right-0 h-px"
              style={{ background: 'linear-gradient(90deg, transparent, #38bdf8, transparent)', animation: 'scan 3s ease-in-out infinite' }} />
 
+        {/* Left: logo */}
         <div>
           <h1 style={{ fontFamily: 'Orbitron, monospace', color: '#38bdf8', letterSpacing: 6, fontSize: 18, fontWeight: 900 }}>
-            🛡️ VANGUARD TACTICAL
+            VANGUARD TACTICAL
           </h1>
-          <p style={{ color: 'rgba(56,189,248,0.45)', letterSpacing: 3, fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, marginTop: 2 }}>
+          <p style={{ color: 'rgba(56,189,248,0.4)', letterSpacing: 3, fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, marginTop: 2 }}>
             SENSOR FUSION &amp; THREAT ASSESSMENT SYSTEM
           </p>
         </div>
 
-        <div className="flex items-center gap-5">
-          {/* Theater threat level */}
-          <div className="flex items-center gap-2 rounded-lg px-3 py-1.5"
-               style={{ background: threat.bg, border: `1px solid ${threat.color}44` }}>
+        {/* Center: Simulation Mode link */}
+        <a href="/sim" style={{ textDecoration: 'none', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+          <div style={{
+            background:   'rgba(56,189,248,0.07)',
+            border:       '1px solid rgba(56,189,248,0.25)',
+            borderRadius: 8, padding: '5px 20px',
+            fontFamily:   'Orbitron, monospace', fontSize: 11, letterSpacing: 3, fontWeight: 700,
+            color:        '#38bdf8',
+            transition:   'background 0.2s',
+          }}
+               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(56,189,248,0.14)')}
+               onMouseLeave={e => (e.currentTarget.style.background = 'rgba(56,189,248,0.07)')}>
+            SIMULATION MODE
+          </div>
+        </a>
+
+        {/* Right: controls */}
+        <div className="flex items-center gap-4">
+          {/* Threat level — clickable */}
+          <button onClick={() => setThreatOpen(true)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 transition-all hover:opacity-80"
+                  style={{ background: threat.bg, border: `1px solid ${threat.color}55`, cursor: 'pointer' }}>
             {threat.pulse && (
-              <span className="w-2 h-2 rounded-full animate-ping"
-                    style={{ background: threat.color, opacity: 0.7, flexShrink: 0 }} />
+              <span className="w-2 h-2 rounded-full animate-ping" style={{ background: threat.color, opacity: 0.7, flexShrink: 0 }} />
             )}
-            <span style={{ color: '#64748b', fontFamily: 'Orbitron, monospace', fontSize: 8, letterSpacing: 2 }}>THREAT</span>
+            <span style={{ color: '#94a3b8', fontFamily: 'Orbitron, monospace', fontSize: 8, letterSpacing: 2 }}>THREAT</span>
             <span style={{ color: threat.color, fontFamily: 'Orbitron, monospace', fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>
               {threat.label}
             </span>
-            <span style={{ color: threat.color, fontFamily: 'Orbitron, monospace', fontSize: 10 }}>
-              {threatScore}
-            </span>
-          </div>
+            <span style={{ color: threat.color, fontFamily: 'Orbitron, monospace', fontSize: 10 }}>{threatScore}</span>
+            <span style={{ color: `${threat.color}88`, fontSize: 10 }}>?</span>
+          </button>
 
           {/* Status buttons */}
           <div className="flex items-center gap-4 text-xs" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-            <button onClick={openModel}
-                    className="flex items-center gap-1.5 hover:opacity-75 transition-opacity"
+            <button onClick={openModel} className="flex items-center gap-1.5 hover:opacity-75 transition-opacity"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <span className="w-2 h-2 rounded-full animate-[pulse-dot_2.2s_ease-in-out_infinite]"
-                    style={{ background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+              <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
               <span style={{ color: '#22c55e', fontWeight: 600 }}>Model Online</span>
             </button>
-            <button onClick={() => setSensorsOpen(true)}
-                    className="flex items-center gap-1.5 hover:opacity-75 transition-opacity"
+            <button onClick={() => setSensorsOpen(true)} className="flex items-center gap-1.5 hover:opacity-75 transition-opacity"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <span className="w-2 h-2 rounded-full animate-[pulse-dot_2.2s_ease-in-out_infinite_0.4s]"
-                    style={{ background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+              <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
               <span style={{ color: '#22c55e', fontWeight: 600 }}>Sensors Active</span>
             </button>
           </div>
@@ -143,14 +157,6 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
             <span style={{ color: '#22c55e' }}>{approvedCount}</span>
             <span style={{ color: '#475569', fontFamily: 'Space Grotesk' }}> approved</span>
           </div>
-
-          {/* Simulation link */}
-          <a href="/sim"
-             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-             style={{ textDecoration: 'none' }}>
-            <span style={{ fontSize: 13 }}>🎯</span>
-            <span style={{ color: '#38bdf8', fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: 1 }}>SIM</span>
-          </a>
 
           {/* Clock */}
           <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'rgba(56,189,248,0.5)', letterSpacing: 3 }}>
@@ -371,6 +377,84 @@ export default function Header({ pendingCount, approvedCount, selected, threatSc
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── THREAT LEVEL MODAL ───────────────────────────────────────────────── */}
+      {threatOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+             style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
+             onClick={() => setThreatOpen(false)}>
+          <div className="relative overflow-y-auto"
+               style={{
+                 background: 'linear-gradient(135deg,rgba(8,14,26,0.99) 0%,rgba(14,22,40,0.98) 100%)',
+                 border: `1px solid ${threat.color}33`, borderTop: `2px solid ${threat.color}`,
+                 borderRadius: 14, padding: '24px 28px',
+                 maxWidth: 500, width: '90vw', maxHeight: '82vh',
+                 boxShadow: '0 24px 80px rgba(0,0,0,0.8)', fontFamily: 'Space Grotesk, sans-serif',
+               }}
+               onClick={e => e.stopPropagation()}>
+            <button onClick={() => setThreatOpen(false)}
+                    style={{ position: 'absolute', top: 14, right: 16, fontSize: 18, background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>✕</button>
+
+            <div className="mb-5">
+              <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 9, color: threat.color, letterSpacing: 3 }}>THEATER THREAT INDEX</span>
+              <h2 style={{ fontFamily: 'Orbitron, monospace', fontSize: 22, color: threat.color, letterSpacing: 3, marginTop: 4, fontWeight: 900 }}>
+                {threat.label}
+                <span style={{ fontSize: 16, marginLeft: 10, opacity: 0.7 }}>{threatScore} / 100</span>
+              </h2>
+              <p style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>Composite threat score derived from all active contacts</p>
+            </div>
+
+            {/* Score meter */}
+            <div className="mb-5">
+              <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${threatScore}%`, height: '100%', borderRadius: 4,
+                  background: `linear-gradient(90deg, #22c55e, #f59e0b, ${threat.color})`,
+                  transition: 'width 0.8s',
+                }} />
+              </div>
+              <div className="flex justify-between mt-1" style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', color: '#334155' }}>
+                <span>LOW</span><span>GUARDED</span><span>ELEVATED</span><span>HIGH</span><span>CRITICAL</span>
+              </div>
+            </div>
+
+            {/* Scoring breakdown */}
+            <div className="mb-5 rounded-xl px-4 py-3 space-y-2"
+                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <p style={{ color: '#38bdf8aa', fontFamily: 'Orbitron, monospace', fontSize: 9, letterSpacing: 3, marginBottom: 8 }}>SCORE FORMULA</p>
+              {[
+                { cls: 'HOSTILE',  pts: '+15 pts', color: '#f87171', desc: 'each confirmed hostile contact' },
+                { cls: 'SUSPECT',  pts: '+8 pts',  color: '#fb923c', desc: 'each suspect contact' },
+                { cls: 'UNKNOWN',  pts: '+3 pts',  color: '#c4b5fd', desc: 'each unidentified contact' },
+                { cls: 'NEUTRAL / FRIEND', pts: '0 pts', color: '#94a3b8', desc: 'friendly or neutral contacts' },
+              ].map(({ cls, pts, color, desc }) => (
+                <div key={cls} className="flex items-center gap-3">
+                  <span style={{ color, fontFamily: 'Orbitron, monospace', fontSize: 10, fontWeight: 700, minWidth: 50 }}>{pts}</span>
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>{cls} — {desc}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Threat levels explained */}
+            <div className="space-y-2">
+              <p style={{ color: '#38bdf8aa', fontFamily: 'Orbitron, monospace', fontSize: 9, letterSpacing: 3, marginBottom: 8 }}>LEVEL DEFINITIONS</p>
+              {[...THREAT_LEVELS].reverse().map(lvl => (
+                <div key={lvl.label} className="flex items-center gap-3 rounded-lg px-3 py-2"
+                     style={{
+                       background: lvl.label === threat.label ? `${lvl.color}14` : 'rgba(255,255,255,0.02)',
+                       border: `1px solid ${lvl.label === threat.label ? lvl.color + '44' : 'rgba(255,255,255,0.05)'}`,
+                     }}>
+                  {lvl.pulse && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: lvl.color, boxShadow: `0 0 6px ${lvl.color}` }} />}
+                  {!lvl.pulse && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: lvl.color, opacity: 0.5 }} />}
+                  <span style={{ color: lvl.color, fontFamily: 'Orbitron, monospace', fontSize: 11, fontWeight: 700, minWidth: 72 }}>{lvl.label}</span>
+                  <span style={{ color: '#475569', fontSize: 11 }}>score ≥ {lvl.min}</span>
+                  {lvl.label === threat.label && <span style={{ marginLeft: 'auto', color: lvl.color, fontSize: 10, fontWeight: 700 }}>◀ CURRENT</span>}
+                </div>
+              ))}
             </div>
           </div>
         </div>

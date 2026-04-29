@@ -67,17 +67,19 @@ function AircraftMarker({ track, pos, selected, approved, onSelect }: {
           {approved ? '✓' : style.icon}
         </div>
 
-        {/* Heading tick */}
+        {/* Heading tick — longer for approved tracks */}
         <div style={{
           position:        'absolute',
-          top:             8 - 6,
+          top:             8 - (approved ? 26 : 20),
           left:            8 + size / 2 - 1,
-          width:           2,
-          height:          6,
-          background:      style.color,
-          transformOrigin: `1px ${6 + size / 2}px`,
+          width:           approved ? 3 : 2,
+          height:          approved ? 26 : 20,
+          background:      approved
+            ? `linear-gradient(to top, ${style.color}, ${style.color}cc, transparent)`
+            : `linear-gradient(to top, ${style.color}, ${style.color}88, transparent)`,
+          transformOrigin: `1px ${(approved ? 26 : 20) + size / 2}px`,
           transform:       `rotate(${track.heading}deg)`,
-          opacity:         0.7,
+          borderRadius:    '2px 2px 0 0',
         }} />
 
         {/* Track ID label */}
@@ -150,10 +152,14 @@ export default function TacticalMap({ tracks, selectedId, approvals, onSelect }:
           i < selTrack.hist_lats.length - 1 ? (
             <Marker key={`trail-${i}`} latitude={lat} longitude={selTrack.hist_lons[i]} anchor="center">
               <div style={{
-                width:        4, height: 4,
+                width:        i > selTrack.hist_lats.length - 4 ? 7 : 5,
+                height:       i > selTrack.hist_lats.length - 4 ? 7 : 5,
                 borderRadius: '50%',
                 background:   CLASS_STYLES[selTrack.ai_class]?.color ?? '#38bdf8',
-                opacity:      0.25 + (i / selTrack.hist_lats.length) * 0.65,
+                opacity:      0.3 + (i / selTrack.hist_lats.length) * 0.7,
+                boxShadow:    i > selTrack.hist_lats.length - 3
+                  ? `0 0 6px ${CLASS_STYLES[selTrack.ai_class]?.color ?? '#38bdf8'}88`
+                  : 'none',
               }} />
             </Marker>
           ) : null
