@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional  # noqa: F401
 import sys
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
@@ -239,10 +239,14 @@ def track_sensor_votes(t: dict) -> dict:
     rcs, alt, spd = t["rcs_m2"], t["altitude_ft"], t["speed_kts"]
 
     # ── Radar: RCS + kinematics ───────────────────────────────────────────────
-    if rcs < 3 and spd > 500:    rv, rc = "HOSTILE", 0.73
-    elif rcs > 25 and spd < 600: rv, rc = "NEUTRAL", 0.78
-    elif 4 <= rcs <= 25:         rv, rc = "FRIEND",  0.66
-    else:                        rv, rc = "UNKNOWN", 0.51
+    if rcs < 3 and spd > 500:
+        rv, rc = "HOSTILE", 0.73
+    elif rcs > 25 and spd < 600:
+        rv, rc = "NEUTRAL", 0.78
+    elif 4 <= rcs <= 25:
+        rv, rc = "FRIEND", 0.66
+    else:
+        rv, rc = "UNKNOWN", 0.51
 
     # ── ESM: what is the aircraft emitting / jamming? ─────────────────────────
     esm_map = {
@@ -580,9 +584,9 @@ def predict_endpoint(req: PredictRequest):
 
 # ── SIMULATION ENDPOINTS ──────────────────────────────────────────────────────
 
-from backend.sim import sim_mgr, assign_position
-import uuid as _uuid
-import random as _random
+from backend.sim import sim_mgr, assign_position  # noqa: E402
+import uuid as _uuid  # noqa: E402
+import random as _random  # noqa: E402
 
 class SimSubmitRequest(BaseModel):
     altitude_ft:       float
@@ -721,8 +725,8 @@ async def sim_ws(session_id: str, ws: WebSocket):
 
 # ── Static file serving (HF Spaces / single-container deployments) ────────────
 # Mount AFTER all API + WebSocket routes so API paths take precedence.
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse as _FileResponse
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
 
 _DIST = Path(__file__).parent.parent / "frontend" / "dist"
 

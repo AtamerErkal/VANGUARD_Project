@@ -264,9 +264,11 @@ class ImprovedAircraftClassifier(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
-                if m.bias is not None: nn.init.zeros_(m.bias)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm1d):
-                nn.init.ones_(m.weight); nn.init.zeros_(m.bias)
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
 
     def forward(self, x):
         return self.network(torch.clamp(x, -10, 10))
