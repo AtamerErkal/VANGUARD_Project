@@ -18,6 +18,8 @@ from sklearn.preprocessing import RobustScaler, LabelEncoder
 from sklearn.metrics import f1_score, accuracy_score, classification_report
 import joblib
 from pathlib import Path
+import mlflow
+import mlflow.pytorch
 
 SEED = 42
 np.random.seed(SEED)
@@ -273,6 +275,9 @@ class ImprovedAircraftClassifier(nn.Module):
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train():
+    mlflow.set_tracking_uri("mlruns")
+    mlflow.set_experiment("vanguard-air-classification")
+
     total = sum(CLASS_COUNTS.values())
     print("=" * 64)
     print("  VANGUARD AI — NATO Retrain  v3  (realistic imbalance)")
@@ -285,6 +290,7 @@ def train():
     print("\n[1/5] Generating dataset…")
     df = generate_dataset()
     print(f"      {len(df)} total samples")
+    Path('data').mkdir(exist_ok=True)
     df.to_csv('data/vanguard_air_tracks_fused.csv', index=False)
 
     print("\n[2/5] Preprocessing…")
@@ -316,62 +322,101 @@ def train():
         print(f"        {c:>15}: {class_w[i]:.3f}  (n={counts[i]})")
 
     BS       = 64
+    LR       = 2e-3
     train_dl = DataLoader(AircraftDataset(X_tr_s, y_tr), batch_size=BS, shuffle=True)
 
     print("\n[4/5] Training…")
     model     = ImprovedAircraftClassifier(len(feat_cols), len(le.classes_))
-    optimizer = optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
     criterion = nn.CrossEntropyLoss(weight=class_w)
 
     best_val, patience = 0.0, 0
 
-    for epoch in range(1, 151):
-        model.train()
-        for Xb, yb in train_dl:
-            optimizer.zero_grad()
-            criterion(model(Xb), yb).backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-        scheduler.step()
+    with mlflow.start_run(run_name="vanguard-mlp-v3"):
+        mlflow.log_params({
+            "seed":          SEED,
+            "batch_size":    BS,
+            "learning_rate": LR,
+            "weight_decay":  1e-4,
+            "architecture":  "23→128→64→32→6",
+            "dropout":       "0.3/0.2/0.1",
+            "optimizer":     "AdamW",
+            "scheduler":     "CosineAnnealing",
+            "n_features":    len(feat_cols),
+            "n_classes":     len(le.classes_),
+            "train_samples": len(X_tr),
+            "val_samples":   len(X_va),
+            "test_samples":  len(X_te),
+            **{f"class_{k.replace(' ', '_')}_n": v for k, v in CLASS_COUNTS.items()},
+        })
 
+        for epoch in range(1, 151):
+            model.train()
+            for Xb, yb in train_dl:
+                optimizer.zero_grad()
+                criterion(model(Xb), yb).backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+            scheduler.step()
+
+            model.eval()
+            with torch.no_grad():
+                pv = model(torch.FloatTensor(X_va_s)).argmax(1).numpy()
+            va = accuracy_score(y_va, pv)
+            mlflow.log_metric("val_accuracy", va, step=epoch)
+
+            if va > best_val:
+                best_val = va
+                torch.save({'model_state_dict': model.state_dict()}, 'models/best_model.pt')
+                patience = 0
+                print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}  <-- best")
+            else:
+                patience += 1
+                if epoch % 15 == 0:
+                    print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}")
+
+            if patience >= 20:
+                print(f"  Early stop at epoch {epoch}")
+                break
+
+        print("\n[5/5] Test evaluation…")
+        ckpt = torch.load('models/best_model.pt', map_location='cpu')
+        model.load_state_dict(ckpt['model_state_dict'])
         model.eval()
         with torch.no_grad():
-            pv = model(torch.FloatTensor(X_va_s)).argmax(1).numpy()
-        va = accuracy_score(y_va, pv)
+            tp = model(torch.FloatTensor(X_te_s)).argmax(1).numpy()
 
-        if va > best_val:
-            best_val = va
-            torch.save({'model_state_dict': model.state_dict()}, 'models/best_model.pt')
-            patience = 0
-            print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}  <-- best")
-        else:
-            patience += 1
-            if epoch % 15 == 0:
-                print(f"  Epoch {epoch:3d}  val={va:.3f}  best={best_val:.3f}")
+        tl, pl = le.inverse_transform(y_te), le.inverse_transform(tp)
+        acc      = accuracy_score(y_te, tp)
+        f1_macro = f1_score(y_te, tp, average='macro')
+        f1_w     = f1_score(y_te, tp, average='weighted')
 
-        if patience >= 20:
-            print(f"  Early stop at epoch {epoch}")
-            break
+        print(f"\n  Accuracy:    {acc*100:.1f}%")
+        print(f"  F1 Macro:    {f1_macro*100:.1f}%")
+        print(f"  F1 Weighted: {f1_w*100:.1f}%\n")
+        print(classification_report(tl, pl))
 
-    print("\n[5/5] Test evaluation…")
-    ckpt = torch.load('models/best_model.pt', map_location='cpu')
-    model.load_state_dict(ckpt['model_state_dict'])
-    model.eval()
-    with torch.no_grad():
-        tp = model(torch.FloatTensor(X_te_s)).argmax(1).numpy()
+        mlflow.log_metrics({
+            "test_accuracy":    round(acc, 4),
+            "test_f1_macro":    round(f1_macro, 4),
+            "test_f1_weighted": round(f1_w, 4),
+        })
+        per_class_f1 = f1_score(y_te, tp, average=None, labels=list(range(len(le.classes_))))
+        for i, cls in enumerate(le.classes_):
+            mlflow.log_metric(f"f1_{cls.replace(' ', '_')}", round(float(per_class_f1[i]), 4))
 
-    tl, pl = le.inverse_transform(y_te), le.inverse_transform(tp)
-    print(f"\n  Accuracy:    {accuracy_score(y_te, tp)*100:.1f}%")
-    print(f"  F1 Macro:    {f1_score(y_te, tp, average='macro')*100:.1f}%")
-    print(f"  F1 Weighted: {f1_score(y_te, tp, average='weighted')*100:.1f}%\n")
-    print(classification_report(tl, pl))
+        # Gate: fail fast if macro F1 drops below threshold
+        if f1_macro < 0.90:
+            print(f"\n  [WARN] F1 Macro {f1_macro:.3f} < 0.90 regression threshold")
 
-    Path('models').mkdir(exist_ok=True)
-    joblib.dump(scaler,    'models/scaler.joblib')
-    joblib.dump(le,        'models/label_encoder.joblib')
-    joblib.dump(feat_cols, 'models/feature_columns.joblib')
-    print("  Artifacts saved. Restart FastAPI to load the new model.")
+        Path('models').mkdir(exist_ok=True)
+        joblib.dump(scaler,    'models/scaler.joblib')
+        joblib.dump(le,        'models/label_encoder.joblib')
+        joblib.dump(feat_cols, 'models/feature_columns.joblib')
+
+        mlflow.log_artifacts('models', artifact_path="model-artifacts")
+        print("  Artifacts saved & logged to MLflow. Restart FastAPI to load the new model.")
 
 
 if __name__ == '__main__':

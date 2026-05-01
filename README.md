@@ -32,6 +32,29 @@ The AI classifies each contact by combining kinematic, radar, ESM, IRST and IFF 
 
 ---
 
+## Capability Mapping — Defence AI Requirements
+
+| Defence AI Capability | Implementation in VANGUARD |
+|---|---|
+| **Sensor-Level Fusion** | Weighted voting across Radar (0.40), ESM (0.35), IRST (0.15), IFF (0.10) + Dempster-Shafer engine |
+| **Feature-Level Fusion** | 23-feature unified vector from all sensor modalities |
+| **Track-Level Fusion** | Constant-Velocity Kalman filter over 10-point trajectory history; track quality (HIGH/MED/LOW) from posterior covariance |
+| **Decision-Level Fusion** | PyTorch MLP (23→128→64→32→6) with MC Dropout epistemic uncertainty (20 stochastic passes) |
+| **Classical + Deep Learning** | Kalman + Dempster-Shafer (classical) alongside MLP + MC Dropout (deep learning) — both run in parallel |
+| **Uncertainty & Confidence Metrics** | Epistemic uncertainty per track; per-sensor confidence; track quality score; sensor fusion gap |
+| **Anomaly Detection** | 7 rule-based anomaly types: IFF–Maneuver Conflict, RCS–IFF Mismatch, ESM–IFF Conflict (deception), Terrain Hugging, High-Speed Non-Cooperative, Kinematic Anomaly, Signature Conflict |
+| **Explainability (XAI)** | Perturbation-based feature importance; supporting/conflicting direction per feature |
+| **Human-in-the-Loop** | Expert approve / override with full audit trail |
+| **Distributed Architecture** | Three tiers: Edge (sensor nodes) → Fog (FastAPI inference server) → Cloud (MLflow registry + retraining) |
+| **Containerised Deployment** | Docker (single-container HF Spaces) + docker-compose (multi-service: backend, MLflow UI, sensor-feeder) |
+| **MLOps / Model Registry** | MLflow experiment tracking — params, per-epoch val accuracy, test F1/precision/recall, artifact versioning |
+| **CI / Regression Gate** | GitHub Actions: dataset shape validation + F1 Macro ≥ 0.90 gate on every push to main |
+| **Sensor Modalities** | Radar (RCS + kinematics), ESM/ELINT (emission signatures, jamming), IRST/EO-IR (thermal), IFF (Mode-5 crypto / Mode-3C civil), AIS (architecture-ready) |
+| **Deception Scenarios** | HOSTILE spoofing civil IFF, FRIEND in radio silence, partial jamming with civil squawk — modelled in training data |
+| **Generalisation** | No geographic features — model generalises across theatres by design |
+
+---
+
 ## System Architecture
 
 ### Deployment tiers — Cloud ↔ Fog ↔ Edge
