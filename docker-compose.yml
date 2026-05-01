@@ -11,11 +11,11 @@ services:
     environment:
       - PORT=7860
     volumes:
-      - ./models:/app/models:ro      # mount trained artifacts
+      - ./models:/app/models:ro # mount trained artifacts
       - ./data:/app/data:ro
-      - ./mlruns:/app/mlruns:ro      # MLflow run history (read-only at runtime)
+      - ./mlruns:/app/mlruns:ro # MLflow run history (read-only at runtime)
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -41,36 +41,33 @@ services:
     command: >
       bash -c "pip install requests -q &&
                python -c \"
-import time, requests, random, json
 
-BACKEND = 'http://backend:7860'
-PROFILES = ['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING']
-ESM_SIGS = ['CLEAN', 'UNKNOWN_EMISSION', 'NOISE_JAMMING', 'HOSTILE_JAMMING']
-IFF_MODES = ['IFF_MODE_5', 'IFF_MODE_3C', 'DEGRADED', 'NO_RESPONSE']
+      import time, requests, random, json
 
-print('[sensor-feeder] Edge node started — sending tracks every 10s')
-while True:
-    track = {
-        'altitude_ft': random.uniform(500, 45000),
-        'speed_kts': random.uniform(200, 900),
-        'rcs_m2': random.uniform(0.5, 50),
-        'latitude': random.uniform(44, 54),
-        'longitude': random.uniform(5, 35),
-        'heading': random.uniform(0, 360),
-        'esm_signature': random.choice(ESM_SIGS),
-        'iff_mode': random.choice(IFF_MODES),
-        'flight_profile': random.choice(PROFILES),
-        'weather': random.choice(['Clear', 'Cloudy', 'Rainy']),
-        'thermal_signature': random.choice(['High', 'Medium', 'Low', 'Not_Detected']),
-    }
-    try:
-        r = requests.post(f'{BACKEND}/api/predict', json=track, timeout=5)
-        result = r.json()
-        print(f'[sensor-feeder] → {result[\\\"classification\\\"]} ({result[\\\"confidence\\\"]:.2f})')
-    except Exception as e:
-        print(f'[sensor-feeder] backend not ready: {e}')
-    time.sleep(10)
-\""
-    depends_on:
-      backend:
-        condition: service_healthy
+      BACKEND = 'http://backend:7860' PROFILES = ['STABLE_CRUISE', 'CLIMBING', 'AGGRESSIVE_MANEUVERS', 'LOW_ALTITUDE_FLYING'] ESM_SIGS = ['CLEAN', 'UNKNOWN_EMISSION', 'NOISE_JAMMING', 'HOSTILE_JAMMING'] IFF_MODES = ['IFF_MODE_5', 'IFF_MODE_3C', 'DEGRADED', 'NO_RESPONSE']
+
+      print('[sensor-feeder] Edge node started — sending tracks every 10s') while True:
+          track = {
+              'altitude_ft': random.uniform(500, 45000),
+              'speed_kts': random.uniform(200, 900),
+              'rcs_m2': random.uniform(0.5, 50),
+              'latitude': random.uniform(44, 54),
+              'longitude': random.uniform(5, 35),
+              'heading': random.uniform(0, 360),
+              'esm_signature': random.choice(ESM_SIGS),
+              'iff_mode': random.choice(IFF_MODES),
+              'flight_profile': random.choice(PROFILES),
+              'weather': random.choice(['Clear', 'Cloudy', 'Rainy']),
+              'thermal_signature': random.choice(['High', 'Medium', 'Low', 'Not_Detected']),
+          }
+          try:
+              r = requests.post(f'{BACKEND}/api/predict', json=track, timeout=5)
+              result = r.json()
+              print(f'[sensor-feeder] → {result[\\\"classification\\\"]} ({result[\\\"confidence\\\"]:.2f})')
+          except Exception as e:
+              print(f'[sensor-feeder] backend not ready: {e}')
+          time.sleep(10)
+      \""
+          depends_on:
+            backend:
+              condition: service_healthy
